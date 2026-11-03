@@ -1,11 +1,19 @@
-# iPad package, by hand. A macOS runner links OpenRB-338 for the device and uploads an
-# ad-hoc signed .ipa. SideServer (on Linux) re-signs it with a free Apple ID and installs
-# it over USB. This file does not run on every push: macOS minutes are metered on a
-# private repository, and the artifact is only needed when a new build goes to the iPad.
+# iPad package. A macOS runner links OpenRB-338 for the device and uploads an
+# ad-hoc signed .ipa. Impactor or SideServer (on Linux) re-signs it with a free
+# Apple ID and installs it over USB. macOS minutes are metered on a private
+# repository, so this runs when the iPad files change, and by hand. Other
+# pushes do not start it.
 name: ios
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "crates/orb-ui/**"
+      - "ios/**"
+      - "scripts/ios-ipa.sh"
+      - ".github/workflows/ios.yml"
 
 permissions:
   contents: read
