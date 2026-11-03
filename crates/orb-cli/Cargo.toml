@@ -21,12 +21,16 @@ rbm = { path = "../rbm" }
 orb-player = { path = "../orb-player" }
 clap = { version = "4.6.7", features = ["derive"] }
 flacenc = "0.5.1"
-vorbis_rs = "0.5.6"
 # orb compare: the FLAC references, the manifest and the WAVs' sha256.
 claxon = "0.4.3"
 serde_json = "1.0.154"
 sha2 = "0.10"
 cab = "=0.6.0"
+
+# Ogg Vorbis is a C library (ogg_next_sys). It is not in the iPad build: that target
+# links only on macOS, and WAV and FLAC cover export there. Desktop builds are unchanged.
+[target.'cfg(not(target_os = "ios"))'.dependencies]
+vorbis_rs = "0.5.6"
 
 [dev-dependencies]
 # The gated tests' external inputs (task-121); a dev-dependency cycle (it uses orb_cli::cd).

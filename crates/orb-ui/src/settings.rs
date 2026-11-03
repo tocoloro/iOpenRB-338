@@ -8,7 +8,8 @@
 //! `preferred_mods` (an INFO name to the file name preferred among mods that share it,
 //! task-151), so it can be edited by hand. Where it lives: `$ORB_UI_CONFIG` if set; else
 //! `OpenRB-338/ui.toml` in the platform's configuration folder (`$XDG_CONFIG_HOME`, or
-//! `~/.config` on Linux, `~/Library/Application Support` on macOS, `%APPDATA%` on Windows).
+//! `~/.config` on Linux, `~/Library/Application Support` on macOS and iOS, `%APPDATA%` on
+//! Windows).
 //! Reading never fails: a missing or damaged file gives the defaults (a damaged file stays as
 //! it is until the next save), a key of the wrong type is skipped and the others kept, and
 //! unknown keys are
@@ -100,7 +101,7 @@ pub fn default_file() -> Option<PathBuf> {
         std::env::var_os("APPDATA").map(PathBuf::from)
     } else if let Some(x) = std::env::var_os("XDG_CONFIG_HOME").filter(|x| !x.is_empty()) {
         Some(PathBuf::from(x))
-    } else if cfg!(target_os = "macos") {
+    } else if cfg!(any(target_os = "macos", target_os = "ios")) {
         home().map(|h| h.join("Library/Application Support"))
     } else {
         home().map(|h| h.join(".config"))

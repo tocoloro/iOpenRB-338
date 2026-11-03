@@ -1,0 +1,32 @@
+# iPad package, by hand. A macOS runner links OpenRB-338 for the device and uploads an
+# ad-hoc signed .ipa. SideServer (on Linux) re-signs it with a free Apple ID and installs
+# it over USB. This file does not run on every push: macOS minutes are metered on a
+# private repository, and the artifact is only needed when a new build goes to the iPad.
+name: ios
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  ipa:
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - name: Build the iPad IPA
+        run: scripts/ios-ipa.sh
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: OpenRB-338-ipad
+          path: dist/OpenRB-338.ipa
+          if-no-files-found: error

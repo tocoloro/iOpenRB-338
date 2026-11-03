@@ -5,7 +5,13 @@
 //! egui_extras' SVG loader (usvg + resvg) with a size hint of the displayed size in physical
 //! pixels; a scale change gives a new hint and so a new, crisp raster. The panel keeps its
 //! 624 x 510 aspect ratio and is letterboxed.
+//!
+//! The mouse and the first finger go through egui's one pointer. Each further finger is its own
+//! touch (`Event::Touch` that egui-winit does not turn into a pointer) and drives its own control,
+//! so several knobs, faders and step buttons move in the same frame. That is the iPad path: the
+//! same panel, several fingers.
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -60,6 +66,46 @@ impl View {
     pub fn to_panel(&self, p: Pos2) -> Pos2 {
         ((p - self.origin) / self.scale).to_pos2()
     }
+}
+
+/// One finger that egui's single pointer is not already driving.
+struct Finger {
+    /// Position in screen points.
+    pos: Pos2,
+    grab: Option<FingerGrab>,
+}
+
+/// What an extra finger grabbed at touch-down. `Miss` is a finger that landed on nothing, so a
+/// later slide does not pick a control up.
+enum FingerGrab {
+    Miss,
+    Knob {
+        id: String,
+        p0: i32,
+        y0: f32,
+        fine: bool,
+    },
+    Fader {
+        id: String,
+        p0: i32,
+        y0: f32,
+    },
+    Repeat {
+        id: String,
+        t0: f64,
+        taken: u32,
+    },
+    Button {
+        id: String,
+    },
+    Strip {
+        is808: bool,
+        value: u8,
+        last: i32,
+    },
+    Legend {
+        is808: bool,
+    },
 }
 
 /// Per-control gesture state, kept in egui's memory.
@@ -198,6 +244,9 @@ pub struct App {
     /// The window title last sent (`App::update_title`).
     pub title: String,
     holds: Vec<Hold>,
+    /// Fingers beyond the one egui's pointer already owns. The key is stable from touch down to
+    /// lift.
+    fingers: BTreeMap<egui::TouchId, Finger>,
     ctls: Vec<Ctl>,
     shot: Option<Shot>,
     /// `ORB_UI_FRAME_STATS=1`: the frame rate and cost, printed (`FrameStats`).
@@ -251,6 +300,7 @@ impl App {
             allow_close: false,
             title: String::new(),
             holds: Vec::new(),
+            fingers: BTreeMap::new(),
             ctls: layout::controls(),
             shot,
             frame_stats: FrameStats::from_env(),
@@ -596,7 +646,7 @@ impl App {
         }
         let view = View::fit(avail, ui.ctx().pixels_per_point());
         let now = ui.input(|i| i.time);
-        self.panel.held = None;
+        self.panel.held.clear();
 
         // While the file browser, the prompt or the error box is open the panel takes no keys
         // and no clicks of its own.
@@ -624,8 +674,11 @@ impl App {
                 }
                 self.focus_click(ui, &view);
             }
+            self.sync_fingers(ui);
+            self.apply_extra_fingers(ui, &view, now);
         } else {
             self.holds.clear();
+            self.fingers.clear();
         }
 
         for (name, x, y) in layout::backgrounds() {
@@ -834,7 +887,9 @@ impl App {
             }
             kind => {
                 let r = self.hit(ui, c, rect);
-                let down = r.is_pointer_button_down_on() || self.key_held(&c.id);
+                let down = r.is_pointer_button_down_on()
+                    || self.key_held(&c.id)
+                    || self.finger_holds(&c.id);
                 match kind {
                     "repeat" | "wind" => self.repeat(ui, c, &r),
                     "switch" | "toggle" | "radio" | "trigger" | "grid" => {
@@ -947,6 +1002,300 @@ impl App {
             .map(|p| view.to_panel(p))
     }
 
+    /// True while an extra finger holds the button `id` down (its pressed frame).
+    fn finger_holds(&self, id: &str) -> bool {
+        self.fingers.values().any(|f| {
+            matches!(
+                &f.grab,
+                Some(FingerGrab::Button { id: b } | FingerGrab::Repeat { id: b, .. }) if b == id
+            )
+        })
+    }
+
+    /// Fold this frame's touch events into [`Self::fingers`]. The pointer's own finger stays in
+    /// the map so the next frame can tell it from the others; [`Self::apply_extra_fingers`] skips
+    /// it.
+    fn sync_fingers(&mut self, ui: &Ui) {
+        if !ui.input(|i| i.focused) {
+            self.fingers.clear();
+            return;
+        }
+        let events = ui.input(|i| i.events.clone());
+        for ev in events {
+            let egui::Event::Touch { id, phase, pos, .. } = ev else {
+                continue;
+            };
+            match phase {
+                egui::TouchPhase::Start => {
+                    self.fingers.insert(id, Finger { pos, grab: None });
+                }
+                egui::TouchPhase::Move => {
+                    if let Some(f) = self.fingers.get_mut(&id) {
+                        f.pos = pos;
+                    }
+                }
+                egui::TouchPhase::End | egui::TouchPhase::Cancel => {
+                    self.fingers.remove(&id);
+                }
+            }
+        }
+    }
+
+    /// The touch egui turned into the pointer: the finger sitting on the pointer, while the
+    /// primary button is down. egui-winit drives only that one touch as a mouse.
+    fn primary_touch_id(&self, ui: &Ui) -> Option<egui::TouchId> {
+        let (down, pos) = ui.input(|i| {
+            (
+                i.pointer.button_down(egui::PointerButton::Primary),
+                i.pointer.latest_pos(),
+            )
+        });
+        let pos = pos.filter(|_| down)?;
+        self.fingers
+            .iter()
+            .filter(|(_, f)| f.pos.distance(pos) < 4.0)
+            .min_by(|(_, a), (_, b)| {
+                a.pos
+                    .distance(pos)
+                    .partial_cmp(&b.pos.distance(pos))
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .map(|(id, _)| *id)
+    }
+
+    /// The control under the pointer, so a second finger cannot grab the one the mouse already
+    /// has. `None` when the pointer is up or on a step strip or a legend.
+    fn pointer_control(&self, ui: &Ui, view: &View) -> Option<String> {
+        let down = ui.input(|i| {
+            i.pointer
+                .button_down(egui::PointerButton::Primary)
+                .then(|| i.pointer.latest_pos())
+                .flatten()
+        })?;
+        self.control_at(view.to_panel(down)).map(|c| c.id.clone())
+    }
+
+    fn control_at(&self, p: Pos2) -> Option<&Ctl> {
+        self.ctls.iter().rev().find(|c| {
+            interactive(&c.kind)
+                && Rect::from_min_size(Pos2::new(c.x, c.y), Vec2::new(c.w, c.h)).contains(p)
+        })
+    }
+
+    /// Drive every finger the pointer does not already own.
+    fn apply_extra_fingers(&mut self, ui: &Ui, view: &View, now: f64) {
+        let primary = self.primary_touch_id(ui);
+        let mut taken: std::collections::HashSet<String> =
+            self.pointer_control(ui, view).into_iter().collect();
+        for f in self.fingers.values() {
+            if let Some(FingerGrab::Knob { id, .. } | FingerGrab::Fader { id, .. }) = &f.grab {
+                taken.insert(id.clone());
+            }
+        }
+        let mut fingers = std::mem::take(&mut self.fingers);
+        for (id, finger) in fingers.iter_mut() {
+            if Some(*id) == primary {
+                continue;
+            }
+            let p = view.to_panel(finger.pos);
+            if finger.grab.is_none() {
+                finger.grab = Some(self.begin_finger(p, ui, now, &mut taken));
+            }
+            self.follow_finger(ui, finger, p, now);
+        }
+        self.fingers = fingers;
+    }
+
+    /// Grab whatever is under a finger that just went down. The id of a knob or a fader goes into
+    /// `taken` so a later finger in this frame leaves it alone.
+    fn begin_finger(
+        &mut self,
+        p: Pos2,
+        ui: &Ui,
+        now: f64,
+        taken: &mut std::collections::HashSet<String>,
+    ) -> FingerGrab {
+        if let Some(r) = layout::row_at(p.x, p.y) {
+            self.panel.focus = r;
+        }
+        if let Some(c) = self.control_at(p).filter(|c| !taken.contains(&c.id)) {
+            let id = c.id.clone();
+            let kind = c.kind.clone();
+            let top = c.y;
+            if matches!(kind.as_str(), "knob" | "fader") {
+                taken.insert(id.clone());
+            }
+            return self.grab_control(&id, &kind, p.y, top, ui, now);
+        }
+        if let Some(is808) = strip_at(p) {
+            return self.grab_strip(is808, p, ui);
+        }
+        if let Some(is808) = legend_at(p) {
+            self.pick_legend(is808, p);
+            return FingerGrab::Legend { is808 };
+        }
+        if layout::on_logo(p.x, p.y)
+            && let Some(link) = &mut self.link
+        {
+            link.startup_sound();
+        }
+        FingerGrab::Miss
+    }
+
+    fn grab_control(
+        &mut self,
+        id: &str,
+        kind: &str,
+        y: f32,
+        top: f32,
+        ui: &Ui,
+        now: f64,
+    ) -> FingerGrab {
+        match kind {
+            "knob" => {
+                let g = FingerGrab::Knob {
+                    id: id.to_string(),
+                    p0: self.panel.knob(id),
+                    y0: y,
+                    fine: ui.input(|i| i.modifiers.shift),
+                };
+                self.panel.held.insert(id.to_string());
+                g
+            }
+            "fader" => {
+                let rel = y - top;
+                if !behavior::fader_on_handle(self.panel.fader(id), rel) {
+                    self.panel.set_fader(id, behavior::fader_jump(rel));
+                }
+                let g = FingerGrab::Fader {
+                    id: id.to_string(),
+                    p0: self.panel.fader(id),
+                    y0: y,
+                };
+                self.panel.held.insert(id.to_string());
+                g
+            }
+            "repeat" | "wind" => {
+                self.panel.arrow(id);
+                FingerGrab::Repeat {
+                    id: id.to_string(),
+                    t0: now,
+                    taken: 1,
+                }
+            }
+            "hswitch" | "vswitch" => {
+                let v = 1 - self.panel.switch_position(id);
+                self.panel.set_switch(id, v);
+                FingerGrab::Button { id: id.to_string() }
+            }
+            "switch" | "toggle" | "radio" | "trigger" | "grid" => {
+                self.panel.press(id, now);
+                FingerGrab::Button { id: id.to_string() }
+            }
+            _ => FingerGrab::Miss,
+        }
+    }
+
+    fn grab_strip(&mut self, is808: bool, p: Pos2, ui: &Ui) -> FingerGrab {
+        let origin = if is808 {
+            layout::TR808_ORIGIN
+        } else {
+            layout::TR909_ORIGIN
+        };
+        let x = p.x - origin.0;
+        let Some(step) = (if is808 {
+            behavior::tr808_step(x)
+        } else {
+            behavior::tr909_step(x)
+        }) else {
+            return FingerGrab::Miss;
+        };
+        let value = if is808 {
+            u8::from(!self.panel.steps808[self.panel.inst808][step])
+        } else {
+            let m = ui.input(|i| Mods {
+                ctrl: i.modifiers.ctrl,
+                alt: i.modifiers.alt,
+            });
+            self.panel.step909_new_value(step, m)
+        };
+        FingerGrab::Strip {
+            is808,
+            value,
+            last: step as i32,
+        }
+    }
+
+    fn pick_legend(&mut self, is808: bool, p: Pos2) {
+        let origin = if is808 {
+            layout::TR808_ORIGIN
+        } else {
+            layout::TR909_ORIGIN
+        };
+        let (sx, sy) = (p.x - origin.0, p.y - origin.1);
+        let hit = if is808 {
+            behavior::tr808_hit(sx, sy)
+        } else {
+            behavior::tr909_hit(sx, sy)
+        };
+        if let Some(i) = hit {
+            self.panel.select_instrument(is808, i);
+        }
+    }
+
+    fn follow_finger(&mut self, ui: &Ui, finger: &mut Finger, p: Pos2, now: f64) {
+        match &mut finger.grab {
+            Some(FingerGrab::Knob { id, p0, y0, fine }) => {
+                let (p0, y0, fine, id) = (*p0, *y0, *fine, id.clone());
+                self.panel.held.insert(id.clone());
+                let v = behavior::knob_drag(p0, y0, p.y, behavior::knob_span(&id), fine);
+                self.panel.set_knob(&id, v);
+            }
+            Some(FingerGrab::Fader { id, p0, y0 }) => {
+                let (p0, y0, id) = (*p0, *y0, id.clone());
+                self.panel.held.insert(id.clone());
+                self.panel.set_fader(&id, behavior::fader_drag(p0, y0, p.y));
+            }
+            Some(FingerGrab::Repeat { id, t0, taken }) => {
+                let (id, t0) = (id.clone(), *t0);
+                let total = 1 + behavior::repeat_extra_steps(((now - t0) * 1000.0) as u32);
+                while *taken < total {
+                    self.panel.arrow(&id);
+                    *taken += 1;
+                }
+                ui.ctx().request_repaint_after(Duration::from_millis(16));
+            }
+            Some(FingerGrab::Strip { is808, value, last }) => {
+                let (is808, value) = (*is808, *value);
+                let origin = if is808 {
+                    layout::TR808_ORIGIN
+                } else {
+                    layout::TR909_ORIGIN
+                };
+                let step = if is808 {
+                    behavior::tr808_step(p.x - origin.0)
+                } else {
+                    behavior::tr909_step(p.x - origin.0)
+                };
+                let Some(step) = step else {
+                    return;
+                };
+                let step = step as i32;
+                let (a, b) = ((*last).min(step), (*last).max(step));
+                for s in a..=b {
+                    if is808 {
+                        self.panel.set_step808(s as usize, value != 0);
+                    } else {
+                        self.panel.set_step909(s as usize, value);
+                    }
+                }
+                *last = step;
+            }
+            Some(FingerGrab::Legend { is808 }) => self.pick_legend(*is808, p),
+            _ => {}
+        }
+    }
+
     fn knob(&mut self, ui: &mut Ui, view: &View, c: &Ctl, rect: Rect) {
         let r = self.hit(ui, c, rect);
         let (id, mut g) = Self::gesture(ui, c);
@@ -955,7 +1304,7 @@ impl App {
             ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeVertical);
         }
         if down {
-            self.panel.held = Some(c.id.clone());
+            self.panel.held.insert(c.id.clone());
             if !g.down {
                 // Mouse down grabs the knob where it is (no jump); Shift now means fine.
                 g.p0 = self.panel.knob(&c.id);
@@ -993,7 +1342,7 @@ impl App {
         let (id, mut g) = Self::gesture(ui, c);
         let down = r.is_pointer_button_down_on();
         if down {
-            self.panel.held = Some(c.id.clone());
+            self.panel.held.insert(c.id.clone());
             if !g.down {
                 let y = Self::press_origin(ui, view).map_or(0.0, |p| p.y) - c.y;
                 let p = self.panel.fader(&c.id);
@@ -1246,6 +1595,53 @@ fn paint_arc(ui: &Ui, view: &View, c: &Ctl, k: &KnobDesign, a0: f32, a: f32) {
 /// The knob arcs, tessellated (`paint_arc`), by look.
 #[derive(Clone, Default)]
 struct ArcMeshes(std::collections::HashMap<([u32; 11], Color32), Arc<epaint::Mesh>>);
+
+/// Controls a finger can grab. Steps, legends and the logo are hit on their own rectangles.
+fn interactive(kind: &str) -> bool {
+    matches!(
+        kind,
+        "knob"
+            | "fader"
+            | "repeat"
+            | "wind"
+            | "switch"
+            | "toggle"
+            | "radio"
+            | "trigger"
+            | "grid"
+            | "hswitch"
+            | "vswitch"
+    )
+}
+
+/// The drum step strip under a panel point: `Some(true)` is the 808.
+fn strip_at(p: Pos2) -> Option<bool> {
+    let hit = |origin: (f32, f32), x0: f32, y0: f32, w: f32, h: f32| {
+        Rect::from_min_size(Pos2::new(origin.0 + x0, origin.1 + y0), Vec2::new(w, h)).contains(p)
+    };
+    if hit(layout::TR808_ORIGIN, 14.0, 91.0, 256.0, 17.0) {
+        Some(true)
+    } else if hit(layout::TR909_ORIGIN, 26.0, 94.0, 336.0, 16.0) {
+        Some(false)
+    } else {
+        None
+    }
+}
+
+/// The instrument legend under a panel point: `Some(true)` is the 808.
+fn legend_at(p: Pos2) -> Option<bool> {
+    let areas = [
+        (true, layout::TR808_ORIGIN, [10.0, 71.0, 264.0, 14.0]),
+        (true, layout::TR808_ORIGIN, [78.0, 43.0, 106.0, 12.0]),
+        (false, layout::TR909_ORIGIN, [4.0, 4.0, 358.0, 14.0]),
+        (false, layout::TR909_ORIGIN, [26.0, 74.0, 336.0, 15.0]),
+    ];
+    areas.into_iter().find_map(|(is808, o, [x, y, w, h])| {
+        Rect::from_min_size(Pos2::new(o.0 + x, o.1 + y), Vec2::new(w, h))
+            .contains(p)
+            .then_some(is808)
+    })
+}
 
 fn save_png(path: &PathBuf, image: &egui::ColorImage) -> Result<(), image::ImageError> {
     let [w, h] = image.size;

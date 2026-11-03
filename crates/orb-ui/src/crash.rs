@@ -7,7 +7,8 @@
 //! thread (the UI, the audio callback, the export thread) and:
 //! 1. lets the default hook print the message and location to stderr;
 //! 2. writes `crash-YYYYMMDD-HHMMSS.log` to [`log_dir`], keeping the newest [`KEEP`] logs;
-//! 3. shows the box (unless `ORB_UI_NO_CRASH_DIALOG` is set) naming the log;
+//! 3. shows the box (unless `ORB_UI_NO_CRASH_DIALOG` is set) naming the log; iOS keeps the log
+//!    only, because rfd has no iOS backend;
 //! 4. exits with 101, the code of an unhandled panic.
 //!
 //! Every step ignores its own errors and panics (a panic inside a hook aborts the process, and
@@ -39,7 +40,7 @@ pub fn log_dir() -> Option<PathBuf> {
 }
 
 /// [`log_dir`] for the system `os` (`std::env::consts::OS`) and an environment lookup:
-/// - macOS: `~/Library/Logs/OpenRB-338`;
+/// - macOS and iOS: `~/Library/Logs/OpenRB-338`;
 /// - Windows: `%LOCALAPPDATA%\OpenRB-338\logs`;
 /// - others: `$XDG_STATE_HOME/OpenRB-338` or `~/.local/state/OpenRB-338`.
 ///
@@ -50,7 +51,7 @@ pub fn platform_dir(os: &str, env: impl Fn(&str) -> Option<OsString>) -> Option<
         return Some(p);
     }
     match os {
-        "macos" => get("HOME").map(|h| h.join("Library/Logs/OpenRB-338")),
+        "macos" | "ios" => get("HOME").map(|h| h.join("Library/Logs/OpenRB-338")),
         "windows" => get("LOCALAPPDATA").map(|l| l.join("OpenRB-338").join("logs")),
         _ => get("XDG_STATE_HOME")
             .or_else(|| get("HOME").map(|h| h.join(".local/state")))
@@ -272,13 +273,24 @@ fn handle(version: &str, info: &PanicHookInfo) {
         )),
     }
     if !no_dialog() {
-        let _ = rfd::MessageDialog::new()
-            .set_level(rfd::MessageLevel::Error)
-            .set_title("OpenRB-338")
-            .set_description(box_text(&message, location.as_deref(), &log))
-            .set_buttons(rfd::MessageButtons::Ok)
-            .show();
+        show_dialog(&message, location.as_deref(), &log);
     }
+}
+
+/// The native error box. rfd has no iOS backend, so the iPad build keeps the log line only.
+#[cfg(not(target_os = "ios"))]
+fn show_dialog(message: &str, location: Option<&str>, log: &Result<PathBuf, String>) {
+    let _ = rfd::MessageDialog::new()
+        .set_level(rfd::MessageLevel::Error)
+        .set_title("OpenRB-338")
+        .set_description(box_text(message, location, log))
+        .set_buttons(rfd::MessageButtons::Ok)
+        .show();
+}
+
+#[cfg(target_os = "ios")]
+fn show_dialog(message: &str, location: Option<&str>, log: &Result<PathBuf, String>) {
+    let _ = (message, location, log);
 }
 
 #[cfg(test)]
@@ -394,6 +406,10 @@ mod tests {
         let home = env(&[("HOME", "/h")]);
         assert_eq!(
             platform_dir("macos", home),
+            Some("/h/Library/Logs/OpenRB-338".into())
+        );
+        assert_eq!(
+            platform_dir("ios", env(&[("HOME", "/h")])),
             Some("/h/Library/Logs/OpenRB-338".into())
         );
         let win = env(&[("LOCALAPPDATA", "C:\\L"), ("HOME", "/h")]);

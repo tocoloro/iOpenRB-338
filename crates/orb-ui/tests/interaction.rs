@@ -3,7 +3,10 @@
 //! so panel pixels are screen points), and the SVG parts are loaded and rasterized by
 //! egui_extras' loader at 1x, 2x and 3x.
 
-use eframe::egui::{self, Event, Modifiers, PointerButton, Pos2, RawInput, Rect, Vec2};
+use eframe::egui::{
+    self, Event, Modifiers, PointerButton, Pos2, RawInput, Rect, TouchDeviceId, TouchId,
+    TouchPhase, Vec2,
+};
 use orb_ui::app::App;
 use orb_ui::art;
 use orb_ui::layout::{self, PANEL_H, PANEL_W};
@@ -97,6 +100,82 @@ impl Harness {
         self.down(Modifiers::NONE);
         self.up();
     }
+}
+
+fn touch(id: u64, phase: TouchPhase, pos: Pos2) -> Event {
+    Event::Touch {
+        device_id: TouchDeviceId(1),
+        id: TouchId(id),
+        phase,
+        pos,
+        force: None,
+    }
+}
+
+#[test]
+fn two_fingers_drag_two_knobs_at_once() {
+    let mut h = Harness::new();
+    h.app.panel.set_knob("tb303_1.cutoff", 0);
+    h.app.panel.set_knob("tb303_1.reso", 0);
+    let cutoff = Harness::center("tb303_1.cutoff");
+    let reso = Harness::center("tb303_1.reso");
+    h.pos = cutoff;
+    h.frame(vec![
+        Event::PointerMoved(cutoff),
+        Event::PointerButton {
+            pos: cutoff,
+            button: PointerButton::Primary,
+            pressed: true,
+            modifiers: Modifiers::NONE,
+        },
+        touch(1, TouchPhase::Start, cutoff),
+        touch(2, TouchPhase::Start, reso),
+    ]);
+    assert_eq!(h.app.panel.knob("tb303_1.cutoff"), 0);
+    assert_eq!(h.app.panel.knob("tb303_1.reso"), 0);
+    let up = Vec2::new(0.0, 31.0);
+    h.frame(vec![
+        Event::PointerMoved(cutoff - up),
+        touch(1, TouchPhase::Move, cutoff - up),
+        touch(2, TouchPhase::Move, reso - up),
+    ]);
+    assert_eq!(h.app.panel.knob("tb303_1.cutoff"), 500);
+    assert_eq!(h.app.panel.knob("tb303_1.reso"), 500);
+    // Lifting the second finger leaves the first one's knob where the drag put it.
+    h.frame(vec![touch(2, TouchPhase::End, reso - up)]);
+    h.frame(vec![
+        Event::PointerMoved(cutoff - Vec2::new(0.0, 15.5)),
+        touch(1, TouchPhase::Move, cutoff - Vec2::new(0.0, 15.5)),
+    ]);
+    assert_eq!(h.app.panel.knob("tb303_1.cutoff"), 250);
+    assert_eq!(h.app.panel.knob("tb303_1.reso"), 500);
+}
+
+#[test]
+fn the_pointer_finger_is_not_applied_twice_and_another_presses_once() {
+    let mut h = Harness::new();
+    let loop_at = Harness::center("transport.loop");
+    h.frame(vec![
+        Event::PointerMoved(loop_at),
+        Event::PointerButton {
+            pos: loop_at,
+            button: PointerButton::Primary,
+            pressed: true,
+            modifiers: Modifiers::NONE,
+        },
+        touch(1, TouchPhase::Start, loop_at),
+    ]);
+    assert!(h.app.panel.transport.looping, "one press, one flip");
+    h.frame(vec![touch(1, TouchPhase::Move, loop_at)]);
+    assert!(h.app.panel.transport.looping, "holding does not flip again");
+    let play = Harness::center("transport.play");
+    h.frame(vec![touch(2, TouchPhase::Start, play)]);
+    assert!(h.app.panel.transport.playing);
+    h.frame(vec![touch(2, TouchPhase::Move, play)]);
+    assert!(
+        h.app.panel.transport.playing,
+        "the second finger fires once"
+    );
 }
 
 #[test]

@@ -2,7 +2,7 @@
 //! The model is the UI side only: every change that the engine must hear is also pushed to
 //! `Panel::events`, which task-045 forwards to the player. Nothing here makes sound.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::behavior::{self, KNOB_MAX};
 
@@ -287,8 +287,8 @@ pub struct Panel {
     pub vintage: bool,
     /// What the engine must hear, drained by the caller.
     pub events: Vec<Event>,
-    /// The knob or fader being dragged (set by the window): the engine's value does not move it.
-    pub held: Option<String>,
+    /// Knobs and faders a finger or the mouse is dragging. The engine's value does not move them.
+    pub held: HashSet<String>,
     knobs: HashMap<String, i32>,
     faders: HashMap<String, i32>,
     toggles: HashMap<String, bool>,
@@ -332,7 +332,7 @@ impl Panel {
             gr_leds: [0; 9],
             vintage: false,
             events: Vec::new(),
-            held: None,
+            held: HashSet::new(),
             knobs: HashMap::new(),
             faders: HashMap::new(),
             toggles: HashMap::new(),
@@ -561,7 +561,7 @@ impl Panel {
     /// to is kept), a toggle, switch or number takes it. A control being dragged keeps its
     /// position. Unknown ids are ignored.
     pub fn adopt(&mut self, id: &str, v: i32) {
-        if self.held.as_deref() == Some(id) {
+        if self.held.contains(id) {
             return;
         }
         // a pattern section's on/off switch is the row's state (the toggle map is not read)
