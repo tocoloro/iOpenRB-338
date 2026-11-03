@@ -147,6 +147,74 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Args, Exit> {
     Ok(r)
 }
 
+/// WebGPU's default limits ask for 16 inter-stage shader variables. Apple GPU
+/// family 3 (the iPad 7th generation, A10) reports 15. `request_device` then
+/// fails, and eframe calls `process::exit(0)` once the window is up, which is
+/// a clean exit: no crash report, a black frame, then the home screen.
+///
+/// The fitted limits stay inside what the adapter allows. A larger minimum
+/// alignment than the device's is kept: it is a weaker request.
+#[cfg(any(target_os = "ios", test))]
+fn limits_for(supported: eframe::wgpu::Limits) -> eframe::wgpu::Limits {
+    eframe::wgpu::Limits::default().or_worse_values_from(&supported)
+}
+
+/// Desktop keeps egui's own device request. The iPad asks only for limits the
+/// GPU actually has (`limits_for`).
+fn native_options(viewport: egui::ViewportBuilder) -> eframe::NativeOptions {
+    #[cfg(target_os = "ios")]
+    let wgpu_options = {
+        let mut options = eframe::egui_wgpu::WgpuConfiguration::default();
+        if let eframe::egui_wgpu::WgpuSetup::CreateNew(create) = &mut options.wgpu_setup {
+            create.device_descriptor = Arc::new(|adapter| eframe::wgpu::DeviceDescriptor {
+                label: Some("egui wgpu device"),
+                required_limits: limits_for(adapter.limits()),
+                ..Default::default()
+            });
+        }
+        options
+    };
+    eframe::NativeOptions {
+        viewport,
+        #[cfg(target_os = "ios")]
+        wgpu_options,
+        ..Default::default()
+    }
+}
+
+/// Appends eframe's log (the GPU error, if the device request still fails) to
+/// `Documents/openrb.log`, which the Files app and a USB file browser can read.
+#[cfg(target_os = "ios")]
+fn install_ios_log() {
+    struct Logger;
+
+    impl log::Log for Logger {
+        fn enabled(&self, metadata: &log::Metadata<'_>) -> bool {
+            metadata.level() <= log::Level::Info
+        }
+
+        fn log(&self, record: &log::Record<'_>) {
+            if !self.enabled(record.metadata()) {
+                return;
+            }
+            let line = format!("{} [{}] {}\n", record.level(), record.target(), record.args());
+            let path = orb_ui::settings::documents_dir().join("openrb.log");
+            let mut file = std::fs::OpenOptions::new().create(true).append(true).open(path);
+            if let Ok(file) = &mut file {
+                use std::io::Write as _;
+                let _ = file.write_all(line.as_bytes());
+                let _ = file.flush();
+            }
+        }
+
+        fn flush(&self) {}
+    }
+
+    let _ = log::set_boxed_logger(Box::new(Logger));
+    log::set_max_level(log::LevelFilter::Info);
+    log::info!("OpenRB-338 starting");
+}
+
 fn usage(e: Exit) -> ! {
     match e {
         Exit::Help => {
@@ -271,10 +339,9 @@ fn main() -> eframe::Result {
         // The minimum is half the native panel size (decision task-040).
         .with_min_inner_size([PANEL_W / 2.0, PANEL_H / 2.0 + MENU_H])
         .with_maximized(!sized);
-    let options = eframe::NativeOptions {
-        viewport,
-        ..Default::default()
-    };
+    #[cfg(target_os = "ios")]
+    install_ios_log();
+    let options = native_options(viewport);
     eframe::run_native(
         "OpenRB-338",
         options,
@@ -406,6 +473,20 @@ mod tests {
         assert_eq!(a.song, Some("/my songs/a b.rbs".into()));
         let a = parse(&["-psn_0_12345"]).unwrap();
         assert_eq!(a.song, None);
+    }
+
+    #[test]
+    fn an_a10_accepts_the_fitted_limits() {
+        // Apple GPU family 3: 15 inter-stage varyings, not WebGPU's 16.
+        let a10 = eframe::wgpu::Limits {
+            max_inter_stage_shader_variables: 15,
+            ..eframe::wgpu::Limits::default()
+        };
+        let fitted = limits_for(a10.clone());
+        assert!(fitted.check_limits(&a10));
+        assert_eq!(fitted.max_inter_stage_shader_variables, 15);
+        let webgpu = eframe::wgpu::Limits::default();
+        assert!(!webgpu.check_limits(&a10));
     }
 
     #[test]
