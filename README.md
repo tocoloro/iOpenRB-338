@@ -32,9 +32,8 @@ collection are on the original repository:
 ## The iPad build
 
 The iPad application is the same panel, locked to landscape. The whole machine stays
-on screen. The panel sits a few points above the bottom edge, so the TR-909 step row
-can be pressed, and the menu starts below the status bar, clear of the clock and of
-the icons on the right.
+on screen. The status bar is hidden, so the menu sits at the top. The panel sits a
+few points above the bottom edge, so the TR-909 step row can be pressed.
 
 Several fingers can hold controls at once. Options, Large panel draws the panel at
 twice the size and moves it with two fingers. That option is off unless you turn it

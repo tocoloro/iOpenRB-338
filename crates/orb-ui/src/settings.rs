@@ -37,8 +37,7 @@ pub struct Settings {
     pub startup_sound: bool,
     /// Draw the panel at twice its size and pan it (two fingers, or the wheel). Off by
     /// default, so the panel stays fitted to the window. Stored as the bool `large_panel`.
-    /// On iPad a saved `true` is ignored: a launch is always fitted, because the menu
-    /// that turns it off can sit under the status bar.
+    /// On iPad a saved `true` is ignored, so a launch is always fitted.
     pub large_panel: bool,
     /// Where songs are opened from and saved to by default (`None`: the documents folder).
     pub songs_dir: Option<PathBuf>,

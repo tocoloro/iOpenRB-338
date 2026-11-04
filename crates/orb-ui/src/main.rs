@@ -373,7 +373,7 @@ fn main() -> eframe::Result {
                 use winit::platform::ios::{ValidOrientations, WindowExtIOS as _};
                 window.set_valid_orientations(ValidOrientations::Landscape);
                 // The date and the clock are drawn over the menu. Hiding the bar
-                // takes them off the window; the menu also starts further down.
+                // takes them off the window, so the menu can sit at the top.
                 window.set_prefers_status_bar_hidden(true);
             }
             match debug_panic {

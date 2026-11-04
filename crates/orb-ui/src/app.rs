@@ -6,9 +6,8 @@
 //! pixels; a scale change gives a new hint and so a new, crisp raster. The panel keeps its
 //! 624 x 510 aspect ratio and is letterboxed. Options > Large panel draws it at twice that
 //! size (when the window is smaller) and pans it: two fingers, or the wheel. On the iPad the
-//! window stays landscape. The menu starts below the status bar (the clock is on the left and
-//! the other icons on the right), and a fitted panel stops short of the bottom edge so the
-//! 909 step row can be pressed.
+//! window stays landscape, with the status bar hidden so the menu sits at the top. A fitted
+//! panel stops short of the bottom edge so the 909 step row can be pressed.
 //!
 //! The mouse and the first finger go through egui's one pointer. Each further finger is its own
 //! touch (`Event::Touch` that egui-winit does not turn into a pointer) and drives its own control,
@@ -53,41 +52,27 @@ pub struct View {
 /// fits the panel at least this big.
 pub const LARGE_SCALE: f32 = 2.0;
 
-/// Points kept above the menu on the iPad. The status bar draws the date over the
-/// right-hand items (Options, Help) as well as the clock over File. This is taller
-/// than that bar, and it is not reduced when the window reports an inset: the menu
-/// can still start under the date.
-pub const STATUS_CLEARANCE: f32 = 48.0;
-
 /// Points kept under a fitted panel so the 909 step row is not on the screen edge.
 pub const PANEL_BOTTOM_GAP: f32 = 8.0;
-
-/// How far the menu drops. `reported_top` is ignored: subtracting it put the menu
-/// back under the date.
-pub fn menu_drop(_reported_top: f32) -> f32 {
-    STATUS_CLEARANCE
-}
 
 /// How far a fitted panel still has to lift above a bottom inset the window already reserved.
 pub fn panel_lift(reported_bottom: f32) -> f32 {
     (PANEL_BOTTOM_GAP - reported_bottom.max(0.0)).max(0.0)
 }
 
-/// Extra top and bottom on the iPad. A desktop window is unchanged.
-pub(crate) fn chrome(ctx: &egui::Context) -> (f32, f32) {
+/// Room under the panel on the iPad. The status bar is hidden, so nothing is reserved
+/// above the menu. A desktop window is unchanged.
+pub(crate) fn bottom_inset(ctx: &egui::Context) -> f32 {
     #[cfg(target_os = "ios")]
     {
         let screen = ctx.viewport_rect();
         let content = ctx.content_rect();
-        (
-            menu_drop(content.min.y - screen.min.y),
-            panel_lift(screen.max.y - content.max.y),
-        )
+        panel_lift(screen.max.y - content.max.y)
     }
     #[cfg(not(target_os = "ios"))]
     {
         let _ = ctx;
-        (0.0, 0.0)
+        0.0
     }
 }
 
@@ -741,12 +726,12 @@ impl App {
         if ui.ctx().options(|o| o.theme_preference) != egui::ThemePreference::Dark {
             ui.ctx().set_theme(egui::ThemePreference::Dark);
         }
-        let (drop, lift) = chrome(ui.ctx());
+        let lift = bottom_inset(ui.ctx());
         let mut avail = ui.ctx().content_rect();
         ui.painter().rect_filled(avail, 0.0, BG);
         if self.menu {
-            // the panel takes the window below the menu bar (and, on the iPad, the status bar)
-            avail.min.y += MENU_H + drop;
+            // the panel takes the window below the menu bar
+            avail.min.y += MENU_H;
         }
         // the 909 step row is the last row; this keeps it off the screen edge
         avail.max.y -= lift;
