@@ -5,15 +5,15 @@
 //! egui_extras' SVG loader (usvg + resvg) with a size hint of the displayed size in physical
 //! pixels; a scale change gives a new hint and so a new, crisp raster. The panel keeps its
 //! 624 x 510 aspect ratio and is letterboxed. Options > Large panel draws it at twice that
-//! size (when the window is smaller) and pans it: two fingers, or the wheel. On the iPad the
-//! window stays landscape, with the status bar hidden so the menu sits at the top. A fitted
-//! panel stops short of the bottom edge so the 909 step row can be pressed.
+//! size (when the window is smaller) and pans it: two fingers on empty space, or the wheel.
+//! Fingers on the controls still play them. On the iPad the window stays landscape, with the
+//! status bar hidden so the menu sits at the top. A fitted panel stops short of the bottom
+//! edge so the 909 step row can be pressed.
 //!
 //! The mouse and the first finger go through egui's one pointer. Each further finger is its own
 //! touch (`Event::Touch` that egui-winit does not turn into a pointer) and drives its own control,
 //! so several knobs, faders and step buttons move in the same frame. That is the iPad path: the
-//! same panel, several fingers. With Large panel on, two fingers move the panel instead, and a
-//! control waits until every finger is up.
+//! same panel, several fingers, with Large panel on or off.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -741,7 +741,7 @@ impl App {
         let open = self.browser.is_none() && self.prompt.is_none() && !self.error_open();
         if open {
             self.sync_fingers(ui);
-            self.drag_panel(ui);
+            self.drag_panel(ui, avail);
         } else {
             self.holds.clear();
             self.fingers.clear();
@@ -1209,10 +1209,11 @@ impl App {
         })
     }
 
-    /// Two fingers (or the wheel, when no finger is down) shift [`Self::pan`]. A two-finger
-    /// gesture keeps [`Self::panning`] set until every finger is up, so the lift does not
-    /// press the control under the last finger.
-    fn drag_panel(&mut self, ui: &Ui) {
+    /// Two fingers on empty space (or the wheel, when no finger is down) shift [`Self::pan`].
+    /// A finger on a control keeps the gesture as multitouch: the panel does not move, and
+    /// each finger plays what it landed on. A pan, once started, stays until every finger is
+    /// up, so the lift does not press the control under the last finger.
+    fn drag_panel(&mut self, ui: &Ui, avail: Rect) {
         if !self.settings.large_panel {
             self.panning = false;
             for finger in self.fingers.values_mut() {
@@ -1220,8 +1221,11 @@ impl App {
             }
             return;
         }
-        if self.fingers.len() >= 2 {
+        let (view, _) = View::placed(avail, ui.ctx().pixels_per_point(), true, self.pan);
+        if self.fingers.len() >= 2 && !self.fingers_on_controls(ui, &view) {
             self.panning = true;
+        }
+        if self.panning && self.fingers.len() >= 2 {
             let mut delta = Vec2::ZERO;
             let mut n = 0u32;
             for finger in self.fingers.values() {
@@ -1245,6 +1249,41 @@ impl App {
         for finger in self.fingers.values_mut() {
             finger.prev = finger.pos;
         }
+    }
+
+    /// A down pointer or finger is on a knob, a button, a step or a legend.
+    fn fingers_on_controls(&self, ui: &Ui, view: &View) -> bool {
+        if self.pointer_on_control(ui, view) {
+            return true;
+        }
+        self.fingers
+            .values()
+            .any(|f| self.finger_on_control(view, f))
+    }
+
+    /// The pointer went down on a control. The drag may since have left that rectangle.
+    fn pointer_on_control(&self, ui: &Ui, view: &View) -> bool {
+        let down = ui.input(|i| i.pointer.button_down(egui::PointerButton::Primary));
+        if !down {
+            return false;
+        }
+        let Some(origin) = ui.input(|i| i.pointer.press_origin()) else {
+            return false;
+        };
+        self.hits_control(view.to_panel(origin))
+    }
+
+    fn finger_on_control(&self, view: &View, finger: &Finger) -> bool {
+        match &finger.grab {
+            Some(FingerGrab::Miss) => false,
+            Some(_) => true,
+            None => self.hits_control(view.to_panel(finger.pos)),
+        }
+    }
+
+    /// A panel point that a finger plays: a control, a drum step or an instrument legend.
+    fn hits_control(&self, p: Pos2) -> bool {
+        self.control_at(p).is_some() || strip_at(p).is_some() || legend_at(p).is_some()
     }
 
     /// Click and drag, or hover only while a two-finger pan owns the screen.

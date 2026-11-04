@@ -151,6 +151,71 @@ fn two_fingers_drag_two_knobs_at_once() {
     assert_eq!(h.app.panel.knob("tb303_1.reso"), 500);
 }
 
+/// Large panel used to treat every second finger as a pan, so two knobs could not move
+/// together. Fingers that land on controls still play them. Two fingers on empty space
+/// still shift the panel, and Play then answers at its new place.
+#[test]
+fn a_large_panel_keeps_multitouch_and_pans_on_empty_space() {
+    let mut h = Harness::new();
+    h.app.settings.large_panel = true;
+    // One frame so the widgets sit at the large size before the fingers go down.
+    h.frame(vec![]);
+    h.app.panel.set_knob("tb303_1.cutoff", 0);
+    h.app.panel.set_knob("tb303_1.reso", 0);
+    let cutoff = Harness::center("tb303_1.cutoff") * 2.0;
+    let reso = Harness::center("tb303_1.reso") * 2.0;
+    let up = Vec2::new(0.0, 62.0);
+    h.frame(vec![
+        Event::PointerMoved(cutoff),
+        Event::PointerButton {
+            pos: cutoff,
+            button: PointerButton::Primary,
+            pressed: true,
+            modifiers: Modifiers::NONE,
+        },
+        touch(1, TouchPhase::Start, cutoff),
+        touch(2, TouchPhase::Start, reso),
+    ]);
+    h.frame(vec![
+        Event::PointerMoved(cutoff - up),
+        touch(1, TouchPhase::Move, cutoff - up),
+        touch(2, TouchPhase::Move, reso - up),
+    ]);
+    assert_eq!(h.app.panel.knob("tb303_1.cutoff"), 500);
+    assert_eq!(h.app.panel.knob("tb303_1.reso"), 500);
+    h.frame(vec![
+        Event::PointerButton {
+            pos: cutoff - up,
+            button: PointerButton::Primary,
+            pressed: false,
+            modifiers: Modifiers::NONE,
+        },
+        touch(1, TouchPhase::End, cutoff - up),
+        touch(2, TouchPhase::End, reso - up),
+    ]);
+
+    let wood = Pos2::new(4.0, 480.0);
+    let other = Pos2::new(4.0, 500.0);
+    let shift = Vec2::new(-80.0, 0.0);
+    h.frame(vec![
+        touch(1, TouchPhase::Start, wood),
+        touch(2, TouchPhase::Start, other),
+    ]);
+    h.frame(vec![
+        touch(1, TouchPhase::Move, wood + shift),
+        touch(2, TouchPhase::Move, other + shift),
+    ]);
+    h.frame(vec![
+        touch(1, TouchPhase::End, wood + shift),
+        touch(2, TouchPhase::End, other + shift),
+    ]);
+    // Play's center was at screen (256, 67). After an 80-point shift it sits at x = 176.
+    h.move_to(Pos2::new(176.0, 67.0));
+    h.down(Modifiers::NONE);
+    h.up();
+    assert!(h.app.panel.transport.playing);
+}
+
 #[test]
 fn the_pointer_finger_is_not_applied_twice_and_another_presses_once() {
     let mut h = Harness::new();

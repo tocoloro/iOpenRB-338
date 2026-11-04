@@ -35,8 +35,9 @@ pub struct Settings {
     /// constructor `sub_41CAA4` sets it, 0x41CB13): a mod change plays the mod's startup
     /// sound. Stored as the bool `startup_sound`.
     pub startup_sound: bool,
-    /// Draw the panel at twice its size and pan it (two fingers, or the wheel). Off by
-    /// default, so the panel stays fitted to the window. Stored as the bool `large_panel`.
+    /// Draw the panel at twice its size. Two fingers on empty space pan it, or the wheel.
+    /// Fingers on the controls still play them. Off by default, so the panel stays fitted
+    /// to the window. Stored as the bool `large_panel`.
     /// On iPad a saved `true` is ignored, so a launch is always fitted.
     pub large_panel: bool,
     /// Where songs are opened from and saved to by default (`None`: the documents folder).

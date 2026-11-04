@@ -36,8 +36,8 @@ on screen. The status bar is hidden, so the menu sits at the top. The panel sits
 few points above the bottom edge, so the TR-909 step row can be pressed.
 
 Several fingers can hold controls at once. Options, Large panel draws the panel at
-twice the size and moves it with two fingers. That option is off unless you turn it
-on. Export on the iPad writes WAV and FLAC. Songs copied into the app's Documents
+twice the size. Two fingers on empty space move it, and fingers on the controls
+still play them. That option is off unless you turn it on. Export on the iPad writes WAV and FLAC. Songs copied into the app's Documents
 folder, through the Files app, are what File, Open can load.
 
 ## In a host

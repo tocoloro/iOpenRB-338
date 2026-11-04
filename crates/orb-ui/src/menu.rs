@@ -16,8 +16,8 @@
 //!   when a song is opened and at the start ([`App::start`]), but only when the kit changes
 //!   (task-099). "Demo Song" opens the `Demo.rbs` of the current mod as an unsaved song (task-094).
 //! - **Options**: the Vintage ReBirth Synth Sound flag (GLOB byte 482; Edit menu item 323 of the
-//!   original), Large panel (twice the size, panned with two fingers) and the keyboard mode
-//!   (Ctrl/Cmd+F, Ctrl/Cmd+G; docs/ui_spec.md section 10).
+//!   original), Large panel (twice the size; two fingers on empty space pan it) and the keyboard
+//!   mode (Ctrl/Cmd+F, Ctrl/Cmd+G; docs/ui_spec.md section 10).
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -98,7 +98,7 @@ pub enum Cmd {
     ToggleVintage,
     /// "Play Mod Startup Sound" of the Options menu (the original's Edit > Preferences).
     ToggleStartupSound,
-    /// "Large panel" of the Options menu: twice the size, moved with two fingers.
+    /// "Large panel" of the Options menu: twice the size. Empty space moves it; controls stay.
     ToggleLargePanel,
     SetKeyMode(KeyMode),
 }
@@ -1235,8 +1235,8 @@ impl App {
                             if ui
                                 .checkbox(&mut large, "Large panel")
                                 .on_hover_text(
-                                    "Twice the size. Two fingers move it; one finger \
-                                     still uses a control.",
+                                    "Twice the size. Two fingers on empty space \
+                                     move it. Fingers on the controls still play them.",
                                 )
                                 .clicked()
                             {
