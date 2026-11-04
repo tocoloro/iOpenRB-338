@@ -197,9 +197,17 @@ fn install_ios_log() {
             if !self.enabled(record.metadata()) {
                 return;
             }
-            let line = format!("{} [{}] {}\n", record.level(), record.target(), record.args());
+            let line = format!(
+                "{} [{}] {}\n",
+                record.level(),
+                record.target(),
+                record.args()
+            );
             let path = orb_ui::settings::documents_dir().join("openrb.log");
-            let mut file = std::fs::OpenOptions::new().create(true).append(true).open(path);
+            let mut file = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(path);
             if let Ok(file) = &mut file {
                 use std::io::Write as _;
                 let _ = file.write_all(line.as_bytes());

@@ -546,7 +546,7 @@ fn view_keeps_the_aspect_ratio_and_letterboxes() {
 
 #[test]
 fn a_large_panel_is_twice_the_size_and_pans_inside_the_window() {
-    use orb_ui::app::{View, LARGE_SCALE};
+    use orb_ui::app::{LARGE_SCALE, View};
     // iPad 7th generation, portrait, below the menu: 810 x 1058 points.
     let avail = Rect::from_min_size(Pos2::ZERO, Vec2::new(810.0, 1058.0));
     let (fitted, _) = View::placed(avail, 1.0, false, Vec2::ZERO);

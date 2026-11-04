@@ -21,8 +21,8 @@ use std::time::Duration;
 use orb_engine::samples::SampleSet;
 
 use eframe::egui::{
-    self, Color32, Image, Key, Pos2, Rect, Response, Shape, Stroke, Ui, Vec2,
-    emath::GuiRounding, epaint,
+    self, Color32, Image, Key, Pos2, Rect, Response, Shape, Stroke, Ui, Vec2, emath::GuiRounding,
+    epaint,
 };
 
 use crate::art::{self, KnobDesign};
@@ -1029,7 +1029,11 @@ impl App {
     fn hit(&self, ui: &mut Ui, c: &Ctl, rect: Rect) -> Response {
         // The kind is part of the key: the 303's accent knob and accent flag button share
         // the layout id `tb303_N.accent`.
-        ui.interact(rect, egui::Id::unique(("hit", &c.kind, &c.id)), self.sense())
+        ui.interact(
+            rect,
+            egui::Id::unique(("hit", &c.kind, &c.id)),
+            self.sense(),
+        )
     }
 
     fn gesture(ui: &Ui, c: &Ctl) -> (egui::Id, Gesture) {
