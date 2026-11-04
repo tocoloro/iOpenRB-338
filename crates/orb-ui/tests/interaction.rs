@@ -543,3 +543,33 @@ fn view_keeps_the_aspect_ratio_and_letterboxes() {
     let p = wide.to_panel(wide.origin + Vec2::new(100.0, 50.0));
     assert_eq!(p, Pos2::new(100.0, 50.0));
 }
+
+#[test]
+fn a_large_panel_is_twice_the_size_and_pans_inside_the_window() {
+    use orb_ui::app::{View, LARGE_SCALE};
+    // iPad 7th generation, portrait, below the menu: 810 x 1058 points.
+    let avail = Rect::from_min_size(Pos2::ZERO, Vec2::new(810.0, 1058.0));
+    let (fitted, _) = View::placed(avail, 1.0, false, Vec2::ZERO);
+    assert!(fitted.scale < LARGE_SCALE);
+    let (view, pan) = View::placed(avail, 1.0, true, Vec2::ZERO);
+    assert_eq!(view.scale, LARGE_SCALE);
+    assert_eq!(pan, Vec2::ZERO);
+    // Wider than the screen, so it starts at the left. The height still fits, so it is centered.
+    assert_eq!(view.origin.x, 0.0);
+    assert_eq!(view.origin.y, (1058.0 - PANEL_H * LARGE_SCALE) / 2.0);
+    let (view, pan) = View::placed(avail, 1.0, true, Vec2::new(-100.0, 0.0));
+    assert_eq!(view.origin.x, -100.0);
+    assert_eq!(pan.x, -100.0);
+    // Past the far edge, the shift stops where the panel still covers the window.
+    let (view, pan) = View::placed(avail, 1.0, true, Vec2::new(-10_000.0, 0.0));
+    assert_eq!(view.origin.x, 810.0 - PANEL_W * LARGE_SCALE);
+    assert_eq!(pan.x, view.origin.x);
+    // A shift the other way cannot open a gap on the left.
+    let (view, pan) = View::placed(avail, 1.0, true, Vec2::new(40.0, 0.0));
+    assert_eq!(view.origin.x, 0.0);
+    assert_eq!(pan.x, 0.0);
+    // Turning it off keeps the stored shift and goes back to the fitted panel.
+    let (back, kept) = View::placed(avail, 1.0, false, Vec2::new(-100.0, 0.0));
+    assert_eq!(back.scale, fitted.scale);
+    assert_eq!(kept, Vec2::new(-100.0, 0.0));
+}

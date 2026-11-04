@@ -4,12 +4,14 @@
 //! Rendering follows decision task-040: every part is an `egui::Image` of its SVG, loaded by
 //! egui_extras' SVG loader (usvg + resvg) with a size hint of the displayed size in physical
 //! pixels; a scale change gives a new hint and so a new, crisp raster. The panel keeps its
-//! 624 x 510 aspect ratio and is letterboxed.
+//! 624 x 510 aspect ratio and is letterboxed. Options > Large panel draws it at twice that
+//! size (when the window is smaller) and pans it: two fingers, or the wheel.
 //!
 //! The mouse and the first finger go through egui's one pointer. Each further finger is its own
 //! touch (`Event::Touch` that egui-winit does not turn into a pointer) and drives its own control,
 //! so several knobs, faders and step buttons move in the same frame. That is the iPad path: the
-//! same panel, several fingers.
+//! same panel, several fingers. With Large panel on, two fingers move the panel instead, and a
+//! control waits until every finger is up.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -19,7 +21,7 @@ use std::time::Duration;
 use orb_engine::samples::SampleSet;
 
 use eframe::egui::{
-    self, Color32, Image, Key, Pos2, Rect, Response, Sense, Shape, Stroke, Ui, Vec2,
+    self, Color32, Image, Key, Pos2, Rect, Response, Shape, Stroke, Ui, Vec2,
     emath::GuiRounding, epaint,
 };
 
@@ -44,6 +46,10 @@ pub struct View {
     pub scale: f32,
 }
 
+/// Panel pixels per screen point when Options > Large panel is on, unless the window already
+/// fits the panel at least this big.
+pub const LARGE_SCALE: f32 = 2.0;
+
 impl View {
     /// The largest panel-shaped area centered in `avail`, snapped to whole pixels.
     pub fn fit(avail: Rect, ppp: f32) -> Self {
@@ -53,6 +59,34 @@ impl View {
             origin: (avail.center() - size / 2.0).round_to_pixels(ppp),
             scale,
         }
+    }
+
+    /// [`Self::fit`] when `large` is off (`pan` is kept and ignored). When `large` is on, the
+    /// scale is at least [`LARGE_SCALE`]. An axis that fits is centered; one that overflows
+    /// starts at the top or the left, then `pan` (screen points) shifts it and is clamped so
+    /// the panel always covers that axis. The returned pan is the clamped shift.
+    pub fn placed(avail: Rect, ppp: f32, large: bool, pan: Vec2) -> (Self, Vec2) {
+        if !large {
+            return (Self::fit(avail, ppp), pan);
+        }
+        let fit = (avail.width() / PANEL_W).min(avail.height() / PANEL_H);
+        let scale = fit.max(LARGE_SCALE);
+        let size = Vec2::new(PANEL_W, PANEL_H) * scale;
+        let base = Pos2::new(
+            axis_home(avail.min.x, avail.width(), size.x),
+            axis_home(avail.min.y, avail.height(), size.y),
+        );
+        let origin = Pos2::new(
+            clamp_axis(base.x + pan.x, avail.min.x, avail.width(), size.x),
+            clamp_axis(base.y + pan.y, avail.min.y, avail.height(), size.y),
+        );
+        (
+            Self {
+                origin: origin.round_to_pixels(ppp),
+                scale,
+            },
+            origin - base,
+        )
     }
 
     pub fn rect(&self, x: f32, y: f32, w: f32, h: f32) -> Rect {
@@ -68,10 +102,31 @@ impl View {
     }
 }
 
+/// Where a panel edge starts on one axis: centered when it fits, else the near edge.
+fn axis_home(min: f32, span: f32, size: f32) -> f32 {
+    if size <= span {
+        min + (span - size) * 0.5
+    } else {
+        min
+    }
+}
+
+/// Keeps `origin` so a panel of `size` covers `span` when it is larger, and stays centered
+/// when it fits.
+fn clamp_axis(origin: f32, min: f32, span: f32, size: f32) -> f32 {
+    if size <= span {
+        min + (span - size) * 0.5
+    } else {
+        origin.clamp(min + span - size, min)
+    }
+}
+
 /// One finger that egui's single pointer is not already driving.
 struct Finger {
     /// Position in screen points.
     pos: Pos2,
+    /// Position at the end of the previous frame, so a two-finger drag has a delta.
+    prev: Pos2,
     grab: Option<FingerGrab>,
 }
 
@@ -247,6 +302,11 @@ pub struct App {
     /// Fingers beyond the one egui's pointer already owns. The key is stable from touch down to
     /// lift.
     fingers: BTreeMap<egui::TouchId, Finger>,
+    /// Extra shift of a large panel, in screen points. Ignored while Large panel is off.
+    pan: Vec2,
+    /// Two fingers are moving the large panel, or a finger from that gesture is still down, so
+    /// controls take no presses until every finger is up.
+    panning: bool,
     ctls: Vec<Ctl>,
     shot: Option<Shot>,
     /// `ORB_UI_FRAME_STATS=1`: the frame rate and cost, printed (`FrameStats`).
@@ -301,6 +361,8 @@ impl App {
             title: String::new(),
             holds: Vec::new(),
             fingers: BTreeMap::new(),
+            pan: Vec2::ZERO,
+            panning: false,
             ctls: layout::controls(),
             shot,
             frame_stats: FrameStats::from_env(),
@@ -644,13 +706,29 @@ impl App {
             // the panel takes the window below the menu bar
             avail.min.y += MENU_H;
         }
-        let view = View::fit(avail, ui.ctx().pixels_per_point());
         let now = ui.input(|i| i.time);
         self.panel.held.clear();
+        // The pan is applied before the view exists, so this frame's drag moves what is hit.
+        let open = self.browser.is_none() && self.prompt.is_none() && !self.error_open();
+        if open {
+            self.sync_fingers(ui);
+            self.drag_panel(ui);
+        } else {
+            self.holds.clear();
+            self.fingers.clear();
+            self.panning = false;
+        }
+        let (view, pan) = View::placed(
+            avail,
+            ui.ctx().pixels_per_point(),
+            self.settings.large_panel,
+            self.pan,
+        );
+        self.pan = pan;
 
         // While the file browser, the prompt or the error box is open the panel takes no keys
         // and no clicks of its own.
-        if self.browser.is_none() && self.prompt.is_none() && !self.error_open() {
+        if open {
             if shortcuts::consume(ui, &shortcuts::NEW) {
                 self.new_song();
             } else if shortcuts::consume(ui, &shortcuts::OPEN) {
@@ -672,13 +750,17 @@ impl App {
                 } else {
                     self.keyboard(ui);
                 }
-                self.focus_click(ui, &view);
+                if !self.panning {
+                    self.focus_click(ui, &view);
+                }
             }
-            self.sync_fingers(ui);
-            self.apply_extra_fingers(ui, &view, now);
-        } else {
-            self.holds.clear();
-            self.fingers.clear();
+            if self.panning {
+                for finger in self.fingers.values_mut() {
+                    finger.grab = None;
+                }
+            } else {
+                self.apply_extra_fingers(ui, &view, now);
+            }
         }
 
         for (name, x, y) in layout::backgrounds() {
@@ -947,11 +1029,7 @@ impl App {
     fn hit(&self, ui: &mut Ui, c: &Ctl, rect: Rect) -> Response {
         // The kind is part of the key: the 303's accent knob and accent flag button share
         // the layout id `tb303_N.accent`.
-        ui.interact(
-            rect,
-            egui::Id::unique(("hit", &c.kind, &c.id)),
-            Sense::click_and_drag(),
-        )
+        ui.interact(rect, egui::Id::unique(("hit", &c.kind, &c.id)), self.sense())
     }
 
     fn gesture(ui: &Ui, c: &Ctl) -> (egui::Id, Gesture) {
@@ -1027,11 +1105,27 @@ impl App {
             };
             match phase {
                 egui::TouchPhase::Start => {
-                    self.fingers.insert(id, Finger { pos, grab: None });
+                    self.fingers.insert(
+                        id,
+                        Finger {
+                            pos,
+                            prev: pos,
+                            grab: None,
+                        },
+                    );
                 }
                 egui::TouchPhase::Move => {
                     if let Some(f) = self.fingers.get_mut(&id) {
                         f.pos = pos;
+                    } else {
+                        self.fingers.insert(
+                            id,
+                            Finger {
+                                pos,
+                                prev: pos,
+                                grab: None,
+                            },
+                        );
                     }
                 }
                 egui::TouchPhase::End | egui::TouchPhase::Cancel => {
@@ -1080,6 +1174,53 @@ impl App {
             interactive(&c.kind)
                 && Rect::from_min_size(Pos2::new(c.x, c.y), Vec2::new(c.w, c.h)).contains(p)
         })
+    }
+
+    /// Two fingers (or the wheel, when no finger is down) shift [`Self::pan`]. A two-finger
+    /// gesture keeps [`Self::panning`] set until every finger is up, so the lift does not
+    /// press the control under the last finger.
+    fn drag_panel(&mut self, ui: &Ui) {
+        if !self.settings.large_panel {
+            self.panning = false;
+            for finger in self.fingers.values_mut() {
+                finger.prev = finger.pos;
+            }
+            return;
+        }
+        if self.fingers.len() >= 2 {
+            self.panning = true;
+            let mut delta = Vec2::ZERO;
+            let mut n = 0u32;
+            for finger in self.fingers.values() {
+                let d = finger.pos - finger.prev;
+                if d != Vec2::ZERO {
+                    delta += d;
+                    n += 1;
+                }
+            }
+            if n > 0 {
+                self.pan += delta / n as f32;
+            }
+        }
+        let held = ui.input(|i| i.pointer.any_down()) || !self.fingers.is_empty();
+        if self.panning && !held {
+            self.panning = false;
+        }
+        if !self.panning {
+            self.pan += ui.input(|i| i.smooth_scroll_delta);
+        }
+        for finger in self.fingers.values_mut() {
+            finger.prev = finger.pos;
+        }
+    }
+
+    /// Click and drag, or hover only while a two-finger pan owns the screen.
+    fn sense(&self) -> egui::Sense {
+        if self.panning {
+            egui::Sense::hover()
+        } else {
+            egui::Sense::click_and_drag()
+        }
     }
 
     /// Drive every finger the pointer does not already own.
@@ -1375,11 +1516,7 @@ impl App {
             };
             let rect = view.rect(origin.0 + x0, origin.1 + y0, w, h);
             let name = if is808 { "strip808" } else { "strip909" };
-            let r = ui.interact(
-                rect,
-                egui::Id::unique(("hit", name)),
-                Sense::click_and_drag(),
-            );
+            let r = ui.interact(rect, egui::Id::unique(("hit", name)), self.sense());
             let gid = egui::Id::unique(("gesture", name));
             let mut g: Gesture = ui.data(|d| d.get_temp(gid)).unwrap_or_default();
             let down = r.is_pointer_button_down_on();
@@ -1449,11 +1586,7 @@ impl App {
         ];
         for (is808, o, [x, y, w, h], name) in areas {
             let rect = view.rect(o.0 + x, o.1 + y, w, h);
-            let r = ui.interact(
-                rect,
-                egui::Id::unique(("hit", name)),
-                Sense::click_and_drag(),
-            );
+            let r = ui.interact(rect, egui::Id::unique(("hit", name)), self.sense());
             if !r.is_pointer_button_down_on() {
                 continue;
             }

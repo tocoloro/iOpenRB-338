@@ -26,6 +26,7 @@ fn the_settings_round_trip_through_toml() {
     let t: toml::Table = text.parse().unwrap();
     assert_eq!(t["songs_dir"].as_str(), Some("/songs"));
     assert_eq!(t["startup_sound"].as_bool(), Some(false));
+    assert!(!t.contains_key("large_panel"));
     assert_eq!(t["recent"].as_array().unwrap().len(), 2);
     let r = Settings::load_from(&file);
     assert_eq!(r, s);

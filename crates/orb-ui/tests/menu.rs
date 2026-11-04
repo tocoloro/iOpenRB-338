@@ -1429,6 +1429,25 @@ fn the_startup_sound_checkbox_flips_the_preference_and_saves_it() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+#[test]
+fn the_large_panel_checkbox_flips_the_preference_and_saves_it() {
+    let dir = std::env::temp_dir().join(format!("orb-ui-large-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let file = dir.join("ui.toml");
+    let mut h = Harness::new();
+    h.app.settings.file = Some(file.clone());
+    assert!(!h.app.settings.large_panel);
+    h.app.command(Cmd::ToggleLargePanel);
+    assert!(h.app.settings.large_panel);
+    let text = std::fs::read_to_string(&file).unwrap();
+    assert!(text.contains("large_panel = true\n"), "{text}");
+    h.app.command(Cmd::ToggleLargePanel);
+    assert!(!h.app.settings.large_panel);
+    let text = std::fs::read_to_string(&file).unwrap();
+    assert!(!text.contains("large_panel"), "{text}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// task-091: File > New is the state of a start without a song: the same code builds both, and
 /// a modified song asks the prompt first.
 #[test]

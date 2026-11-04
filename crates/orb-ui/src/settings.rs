@@ -4,7 +4,8 @@
 //! It is a TOML file (task-107) with the keys `songs_dir` and `mods_dir` (paths, absent when
 //! unset), `recent` (an array of paths, newest first), `last_song_dir` and `last_mod_dir`
 //! (paths, absent until a file is chosen: the folder of the last song chosen in Open, Save As
-//! or Export, and of the last mod; task-144), `startup_sound` (a bool) and the table
+//! or Export, and of the last mod; task-144), `startup_sound` and `large_panel` (bools) and
+//! the table
 //! `preferred_mods` (an INFO name to the file name preferred among mods that share it,
 //! task-151), so it can be edited by hand. Where it lives: `$ORB_UI_CONFIG` if set; else
 //! `OpenRB-338/ui.toml` in the platform's configuration folder (`$XDG_CONFIG_HOME`, or
@@ -34,6 +35,9 @@ pub struct Settings {
     /// constructor `sub_41CAA4` sets it, 0x41CB13): a mod change plays the mod's startup
     /// sound. Stored as the bool `startup_sound`.
     pub startup_sound: bool,
+    /// Draw the panel at twice its size and pan it (two fingers, or the wheel). Off by
+    /// default, so the panel stays fitted to the window. Stored as the bool `large_panel`.
+    pub large_panel: bool,
     /// Where songs are opened from and saved to by default (`None`: the documents folder).
     pub songs_dir: Option<PathBuf>,
     /// Where mods are looked for by default (`None`: the documents folder).
@@ -58,6 +62,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             startup_sound: true,
+            large_panel: false,
             songs_dir: None,
             mods_dir: None,
             recent: Vec::new(),
@@ -117,6 +122,8 @@ struct Stored<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     mods_dir: Option<&'a Path>,
     startup_sound: bool,
+    #[serde(skip_serializing_if = "is_false")]
+    large_panel: bool,
     recent: Vec<&'a Path>,
     #[serde(skip_serializing_if = "Option::is_none")]
     last_song_dir: Option<&'a Path>,
@@ -129,6 +136,10 @@ struct Stored<'a> {
 
 /// The path when TOML can hold it (valid UTF-8). A lossy string would name another folder, so
 /// any other path is left out of the file.
+fn is_false(v: &bool) -> bool {
+    !*v
+}
+
 fn storable(p: &Path) -> Option<&Path> {
     p.to_str().map(|_| p)
 }
@@ -162,6 +173,9 @@ impl Settings {
         };
         if let Some(b) = table.get("startup_sound").and_then(|v| v.as_bool()) {
             s.startup_sound = b;
+        }
+        if let Some(b) = table.get("large_panel").and_then(|v| v.as_bool()) {
+            s.large_panel = b;
         }
         s.songs_dir = table.get("songs_dir").and_then(path_of);
         s.mods_dir = table.get("mods_dir").and_then(path_of);
@@ -211,6 +225,7 @@ impl Settings {
             songs_dir: self.songs_dir.as_deref().and_then(storable),
             mods_dir: self.mods_dir.as_deref().and_then(storable),
             startup_sound: self.startup_sound,
+            large_panel: self.large_panel,
             recent: self.recent.iter().filter_map(|p| storable(p)).collect(),
             last_song_dir: self.last_song_dir.as_deref().and_then(storable),
             last_mod_dir: self.last_mod_dir.as_deref().and_then(storable),

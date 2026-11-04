@@ -16,7 +16,8 @@
 //!   when a song is opened and at the start ([`App::start`]), but only when the kit changes
 //!   (task-099). "Demo Song" opens the `Demo.rbs` of the current mod as an unsaved song (task-094).
 //! - **Options**: the Vintage ReBirth Synth Sound flag (GLOB byte 482; Edit menu item 323 of the
-//!   original) and the keyboard mode (Ctrl/Cmd+F, Ctrl/Cmd+G; docs/ui_spec.md section 10).
+//!   original), Large panel (twice the size, panned with two fingers) and the keyboard mode
+//!   (Ctrl/Cmd+F, Ctrl/Cmd+G; docs/ui_spec.md section 10).
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -97,6 +98,8 @@ pub enum Cmd {
     ToggleVintage,
     /// "Play Mod Startup Sound" of the Options menu (the original's Edit > Preferences).
     ToggleStartupSound,
+    /// "Large panel" of the Options menu: twice the size, moved with two fingers.
+    ToggleLargePanel,
     SetKeyMode(KeyMode),
 }
 
@@ -922,6 +925,12 @@ impl App {
                     self.fail(e);
                 }
             }
+            Cmd::ToggleLargePanel => {
+                self.settings.large_panel = !self.settings.large_panel;
+                if let Err(e) = self.settings.save() {
+                    self.fail(e);
+                }
+            }
             Cmd::SetKeyMode(m) => self.key_mode = m,
         }
     }
@@ -1220,6 +1229,18 @@ impl App {
                             let mut st = self.settings.startup_sound;
                             if ui.checkbox(&mut st, "Play Mod Startup Sound").clicked() {
                                 cmd = Some(Cmd::ToggleStartupSound);
+                                ui.close();
+                            }
+                            let mut large = self.settings.large_panel;
+                            if ui
+                                .checkbox(&mut large, "Large panel")
+                                .on_hover_text(
+                                    "Twice the size. Two fingers move it; one finger \
+                                     still uses a control.",
+                                )
+                                .clicked()
+                            {
+                                cmd = Some(Cmd::ToggleLargePanel);
                                 ui.close();
                             }
                             ui.separator();
