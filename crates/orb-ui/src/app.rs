@@ -74,7 +74,7 @@ pub fn panel_lift(reported_bottom: f32) -> f32 {
 pub(crate) fn chrome(ctx: &egui::Context) -> (f32, f32) {
     #[cfg(target_os = "ios")]
     {
-        let screen = ctx.screen_rect();
+        let screen = ctx.viewport_rect();
         let content = ctx.content_rect();
         (
             menu_drop(content.min.y - screen.min.y),
