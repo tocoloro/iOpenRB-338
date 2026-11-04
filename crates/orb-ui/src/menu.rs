@@ -1108,6 +1108,16 @@ impl App {
     pub fn menu_bar(&mut self, ui: &mut Ui) {
         let mut cmd: Option<Cmd> = None;
         let enabled = !self.browsing() && !self.prompting() && !self.error_open();
+        // On the iPad the status bar covers the top: the clock on the left, the other
+        // icons on the right. The whole menu starts below that strip.
+        let (drop, _) = crate::app::chrome(ui.ctx());
+        if drop > 0.0 {
+            egui::Panel::top("orb_menu_drop")
+                .exact_size(drop)
+                .frame(Frame::NONE)
+                .show_separator_line(false)
+                .show(ui, |_| {});
+        }
         egui::Panel::top("orb_menu")
             .exact_size(MENU_H)
             .show(ui, |ui| {

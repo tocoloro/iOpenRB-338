@@ -46,6 +46,9 @@ rfd = { version = "0.17.2", default-features = false, features = ["xdg-portal"] 
 # iOS (egui's own iOS CI checks `--no-default-features --features wgpu`). The iPad build
 # uses that set, plus the built-in fonts.
 eframe = { version = "0.37.0", default-features = false, features = ["default_fonts", "wgpu"] }
+# The same winit eframe uses. The iPad window is locked to landscape; the plist
+# alone loses, because winit's view controller reports every orientation.
+winit = "0.30.13"
 # Startup notes go to Documents/openrb.log. eframe logs the GPU error and then
 # exits; without a logger that line never reaches the iPad.
 log = "0.4"

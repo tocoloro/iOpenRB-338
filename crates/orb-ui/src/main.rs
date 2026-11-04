@@ -366,6 +366,13 @@ fn main() -> eframe::Result {
             if let Some(ppp) = ppp {
                 cc.egui_ctx.set_pixels_per_point(ppp);
             }
+            // winit's view controller allows every orientation unless told otherwise,
+            // and that overrides the landscape-only Info.plist.
+            #[cfg(target_os = "ios")]
+            if let Some(window) = cc.winit_window() {
+                use winit::platform::ios::{ValidOrientations, WindowExtIOS as _};
+                window.set_valid_orientations(ValidOrientations::Landscape);
+            }
             match debug_panic {
                 Some(DebugPanic::Window) => panic!("--debug-panic-window: a deliberate panic"),
                 Some(DebugPanic::Thread) => {

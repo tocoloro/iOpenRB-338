@@ -5,7 +5,10 @@
 //! egui_extras' SVG loader (usvg + resvg) with a size hint of the displayed size in physical
 //! pixels; a scale change gives a new hint and so a new, crisp raster. The panel keeps its
 //! 624 x 510 aspect ratio and is letterboxed. Options > Large panel draws it at twice that
-//! size (when the window is smaller) and pans it: two fingers, or the wheel.
+//! size (when the window is smaller) and pans it: two fingers, or the wheel. On the iPad the
+//! window stays landscape. The menu starts below the status bar (the clock is on the left and
+//! the other icons on the right), and a fitted panel stops short of the bottom edge so the
+//! 909 step row can be pressed.
 //!
 //! The mouse and the first finger go through egui's one pointer. Each further finger is its own
 //! touch (`Event::Touch` that egui-winit does not turn into a pointer) and drives its own control,
@@ -49,6 +52,41 @@ pub struct View {
 /// Panel pixels per screen point when Options > Large panel is on, unless the window already
 /// fits the panel at least this big.
 pub const LARGE_SCALE: f32 = 2.0;
+
+/// Points the iPad status bar covers when the window reports no safe area. The menu
+/// starts below this, clear of the clock on the left and the icons on the right.
+pub const STATUS_CLEARANCE: f32 = 24.0;
+
+/// Points kept under a fitted panel so the 909 step row is not on the screen edge.
+pub const PANEL_BOTTOM_GAP: f32 = 8.0;
+
+/// How far the menu still has to drop below a top inset the window already reserved.
+pub fn menu_drop(reported_top: f32) -> f32 {
+    (STATUS_CLEARANCE - reported_top.max(0.0)).max(0.0)
+}
+
+/// How far a fitted panel still has to lift above a bottom inset the window already reserved.
+pub fn panel_lift(reported_bottom: f32) -> f32 {
+    (PANEL_BOTTOM_GAP - reported_bottom.max(0.0)).max(0.0)
+}
+
+/// Extra top and bottom on the iPad. A desktop window is unchanged.
+pub(crate) fn chrome(ctx: &egui::Context) -> (f32, f32) {
+    #[cfg(target_os = "ios")]
+    {
+        let screen = ctx.screen_rect();
+        let content = ctx.content_rect();
+        (
+            menu_drop(content.min.y - screen.min.y),
+            panel_lift(screen.max.y - content.max.y),
+        )
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = ctx;
+        (0.0, 0.0)
+    }
+}
 
 impl View {
     /// The largest panel-shaped area centered in `avail`, snapped to whole pixels.
@@ -700,12 +738,15 @@ impl App {
         if ui.ctx().options(|o| o.theme_preference) != egui::ThemePreference::Dark {
             ui.ctx().set_theme(egui::ThemePreference::Dark);
         }
+        let (drop, lift) = chrome(ui.ctx());
         let mut avail = ui.ctx().content_rect();
         ui.painter().rect_filled(avail, 0.0, BG);
         if self.menu {
-            // the panel takes the window below the menu bar
-            avail.min.y += MENU_H;
+            // the panel takes the window below the menu bar (and, on the iPad, the status bar)
+            avail.min.y += MENU_H + drop;
         }
+        // the 909 step row is the last row; this keeps it off the screen edge
+        avail.max.y -= lift;
         let now = ui.input(|i| i.time);
         self.panel.held.clear();
         // The pan is applied before the view exists, so this frame's drag moves what is hit.
