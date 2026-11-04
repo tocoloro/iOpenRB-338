@@ -1343,6 +1343,36 @@ impl Engine {
         self.frame.seq.globals.play != 0
     }
 
+    /// Lock the clock to a host transport. The application never calls this, so its clock
+    /// stays the song's own ([`crate::seq::Sequencer::tick`]).
+    ///
+    /// `beat` is the host's quarter-note position at the start of this buffer. One quarter
+    /// note is [`song::PPQ`] ticks, which is what [`crate::seq::TEMPO_STEP`] advances per beat
+    /// at 44.1 kHz. While `playing` is false the song is halted and the position stays. While
+    /// it is true, a jump of a tick or more locates; a smaller difference only moves the
+    /// position, so a note that is already sounding is not started again. The tempo is the
+    /// host's, in BPM.
+    pub fn follow_host(&mut self, tempo_bpm: f64, beat: f64, playing: bool) {
+        if !playing {
+            if self.playing() {
+                self.halt();
+            }
+            return;
+        }
+        if tempo_bpm.is_finite() && (1.0..=999.0).contains(&tempo_bpm) {
+            self.set_tempo((tempo_bpm * 1000.0).round() as u32);
+        }
+        let target = (beat.max(0.0) * f64::from(song::PPQ)).min(crate::seq::SONG_END);
+        let cur = self.frame.seq.pos;
+        if !self.playing() || (target - cur).abs() >= 1.0 {
+            self.locate(target as u32);
+            self.frame.seq.pos = target;
+            self.play();
+        } else {
+            self.frame.seq.pos = target;
+        }
+    }
+
     /// `sub_100218A0`: the stop of `sub_1001BE74`'s song switch, without the bar locate of msg
     /// 35 `{1,0}`: when playing, clear the play flag and run slot 4; prune every track; in song
     /// mode chase every track to the current tick.

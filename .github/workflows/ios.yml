@@ -11,6 +11,8 @@ on:
     branches: [main]
     paths:
       - "crates/orb-ui/**"
+      - "crates/orb-au/**"
+      - "crates/orb-engine/**"
       - "ios/**"
       - "scripts/ios-ipa.sh"
       - ".github/workflows/ios.yml"

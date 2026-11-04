@@ -40,6 +40,17 @@ twice the size and moves it with two fingers. That option is off unless you turn
 on. Export on the iPad writes WAV and FLAC. Songs copied into the app's Documents
 folder, through the Files app, are what File, Open can load.
 
+## In a host
+
+The same install includes an Audio Unit named OpenRB-338. A host such as AUM loads
+it on a channel, and that channel's effects process what it plays. It has no screen
+and no keyboard. While the host is playing, the pattern follows the host's tempo
+and does not drift. Opened as the application, the clock is the song's own.
+
+The Audio Unit plays a short TR-909 pattern on the built-in kit. The standard kit has
+no demo song, and the song open in the application stays there: a free Apple ID cannot
+hand it to the plugin.
+
 There is no App Store listing and no install package in Releases. The `.ipa` is the
 artifact `OpenRB-338-ipad` of the
 [ios workflow](https://github.com/tocoloro/iOpenReverb-338/actions/workflows/ios.yml).
