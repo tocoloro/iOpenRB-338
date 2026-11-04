@@ -372,6 +372,9 @@ fn main() -> eframe::Result {
             if let Some(window) = cc.winit_window() {
                 use winit::platform::ios::{ValidOrientations, WindowExtIOS as _};
                 window.set_valid_orientations(ValidOrientations::Landscape);
+                // The date and the clock are drawn over the menu. Hiding the bar
+                // takes them off the window; the menu also starts further down.
+                window.set_prefers_status_bar_hidden(true);
             }
             match debug_panic {
                 Some(DebugPanic::Window) => panic!("--debug-panic-window: a deliberate panic"),

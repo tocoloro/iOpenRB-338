@@ -37,6 +37,8 @@ pub struct Settings {
     pub startup_sound: bool,
     /// Draw the panel at twice its size and pan it (two fingers, or the wheel). Off by
     /// default, so the panel stays fitted to the window. Stored as the bool `large_panel`.
+    /// On iPad a saved `true` is ignored: a launch is always fitted, because the menu
+    /// that turns it off can sit under the status bar.
     pub large_panel: bool,
     /// Where songs are opened from and saved to by default (`None`: the documents folder).
     pub songs_dir: Option<PathBuf>,
@@ -174,6 +176,8 @@ impl Settings {
         if let Some(b) = table.get("startup_sound").and_then(|v| v.as_bool()) {
             s.startup_sound = b;
         }
+        // The iPad always starts fitted. A saved `true` is left in the file and unused.
+        #[cfg(not(target_os = "ios"))]
         if let Some(b) = table.get("large_panel").and_then(|v| v.as_bool()) {
             s.large_panel = b;
         }

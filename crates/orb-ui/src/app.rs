@@ -53,16 +53,19 @@ pub struct View {
 /// fits the panel at least this big.
 pub const LARGE_SCALE: f32 = 2.0;
 
-/// Points the iPad status bar covers when the window reports no safe area. The menu
-/// starts below this, clear of the clock on the left and the icons on the right.
-pub const STATUS_CLEARANCE: f32 = 24.0;
+/// Points kept above the menu on the iPad. The status bar draws the date over the
+/// right-hand items (Options, Help) as well as the clock over File. This is taller
+/// than that bar, and it is not reduced when the window reports an inset: the menu
+/// can still start under the date.
+pub const STATUS_CLEARANCE: f32 = 48.0;
 
 /// Points kept under a fitted panel so the 909 step row is not on the screen edge.
 pub const PANEL_BOTTOM_GAP: f32 = 8.0;
 
-/// How far the menu still has to drop below a top inset the window already reserved.
-pub fn menu_drop(reported_top: f32) -> f32 {
-    (STATUS_CLEARANCE - reported_top.max(0.0)).max(0.0)
+/// How far the menu drops. `reported_top` is ignored: subtracting it put the menu
+/// back under the date.
+pub fn menu_drop(_reported_top: f32) -> f32 {
+    STATUS_CLEARANCE
 }
 
 /// How far a fitted panel still has to lift above a bottom inset the window already reserved.

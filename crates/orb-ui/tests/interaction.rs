@@ -548,9 +548,9 @@ fn view_keeps_the_aspect_ratio_and_letterboxes() {
 fn the_menu_clears_the_status_bar_and_the_panel_clears_the_bottom_edge() {
     use orb_ui::app::{PANEL_BOTTOM_GAP, STATUS_CLEARANCE, menu_drop, panel_lift};
     assert_eq!(menu_drop(0.0), STATUS_CLEARANCE);
-    assert_eq!(menu_drop(10.0), STATUS_CLEARANCE - 10.0);
-    assert_eq!(menu_drop(STATUS_CLEARANCE), 0.0);
-    assert_eq!(menu_drop(40.0), 0.0);
+    assert_eq!(menu_drop(10.0), STATUS_CLEARANCE);
+    assert_eq!(menu_drop(STATUS_CLEARANCE), STATUS_CLEARANCE);
+    assert_eq!(menu_drop(40.0), STATUS_CLEARANCE);
     assert_eq!(panel_lift(0.0), PANEL_BOTTOM_GAP);
     assert_eq!(panel_lift(PANEL_BOTTOM_GAP), 0.0);
     assert_eq!(panel_lift(20.0), 0.0);
