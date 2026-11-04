@@ -33,14 +33,18 @@ rm -rf "$app" "$appex" dist/Payload dist/OpenRB-338.ipa dist/OpenRBAudioUnit.o
 mkdir -p "$app" "$appex"
 
 # The Audio Unit extension. The .o is linked in full, so the factory class named
-# by the plist is not dropped. The static library is the engine.
-clang -fobjc-arc -fmodules -isysroot "$SDKROOT" -arch arm64 \
+# by the plist is not dropped. The static library is the engine. An appex starts
+# at NSExtensionMain; it is not an application and has no main.
+clang -fobjc-arc -fmodules -fapplication-extension -isysroot "$SDKROOT" -arch arm64 \
     -miphoneos-version-min=15.0 \
     -c ios/au/OpenRBAudioUnit.m -o dist/OpenRBAudioUnit.o
-clang -fobjc-arc -fmodules -isysroot "$SDKROOT" -arch arm64 \
+clang -fobjc-arc -fmodules -fapplication-extension -isysroot "$SDKROOT" -arch arm64 \
     -miphoneos-version-min=15.0 \
+    -F"$SDKROOT/System/Library/Frameworks" \
+    -Wl,-e,_NSExtensionMain \
     dist/OpenRBAudioUnit.o "$lib" \
     -framework Foundation -framework AVFoundation -framework AudioToolbox \
+    -framework CoreAudio \
     -o "$appex/OpenRB-338"
 cp ios/au/Info.plist "$appex/Info.plist"
 codesign --force --sign - --timestamp=none "$appex/OpenRB-338"

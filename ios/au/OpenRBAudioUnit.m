@@ -120,6 +120,10 @@ extern void orb_au_render(OrbAu *au, float *left, float *right, uint32_t frames,
 
 @implementation OpenRBAudioUnitFactory
 
+- (void)beginRequestWithExtensionContext:(NSExtensionContext *)context {
+    (void)context;
+}
+
 - (AUAudioUnit *)createAudioUnitWithComponentDescription:(AudioComponentDescription)desc
                                                    error:(NSError **)error {
     return [[OpenRBAudioUnit alloc] initWithComponentDescription:desc options:0 error:error];
