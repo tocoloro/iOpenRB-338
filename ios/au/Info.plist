@@ -41,10 +41,14 @@
 					<true/>
 					<key>subtype</key>
 					<string>o338</string>
+					<key>tags</key>
+					<array>
+						<string>Generator</string>
+					</array>
 					<key>type</key>
-					<string>aurg</string>
+					<string>augn</string>
 					<key>version</key>
-					<integer>1</integer>
+					<integer>65536</integer>
 				</dict>
 			</array>
 		</dict>
