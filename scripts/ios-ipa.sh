@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
-# Builds an ad-hoc signed iPad .ipa of OpenRB-338, with an Audio Unit extension.
+# Builds an ad-hoc signed iPad .ipa of OpenRB-338, the application only.
 #
 # Needs macOS with Xcode (the iOS SDK). A Linux machine cannot link this target.
 # GitHub Actions runs it (.github/workflows/ios.yml). The signature is ad hoc (`-`):
 # Impactor or SideServer replaces it with a free Apple ID. Nothing here uses a
 # paid certificate.
 #
-# The extension is dist/OpenRB-338.app/PlugIns/OpenRB-338.appex. A host loads it
-# on a channel and can show its panel. Writes dist/OpenRB-338.ipa.
+# Writes dist/OpenRB-338.ipa. No Audio Unit is packaged.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -23,43 +22,16 @@ export SDKROOT
 echo "SDKROOT=$SDKROOT"
 
 rustup target add aarch64-apple-ios
-cargo build --release --locked --target aarch64-apple-ios -p orb-ui -p orb-au
+cargo build --release --locked --target aarch64-apple-ios -p orb-ui
 
 bin="target/aarch64-apple-ios/release/OpenRB-338"
-lib="target/aarch64-apple-ios/release/liborb_au.a"
 app="dist/OpenRB-338.app"
-appex="dist/OpenRB-338.appex"
-rm -rf "$app" "$appex" dist/Payload dist/OpenRB-338.ipa dist/OpenRBAudioUnit.o
-mkdir -p "$app" "$appex"
-
-# The Audio Unit extension. The .o is linked in full, so the factory class named
-# by the plist is not dropped. The static library is the engine. An appex starts
-# at NSExtensionMain; it is not an application and has no main.
-clang -fobjc-arc -fmodules -fapplication-extension -isysroot "$SDKROOT" -arch arm64 \
-    -miphoneos-version-min=15.0 \
-    -c ios/au/OpenRBAudioUnit.m -o dist/OpenRBAudioUnit.o
-clang -fobjc-arc -fmodules -fapplication-extension -isysroot "$SDKROOT" -arch arm64 \
-    -miphoneos-version-min=15.0 \
-    -F"$SDKROOT/System/Library/Frameworks" \
-    -Wl,-e,_NSExtensionMain \
-    dist/OpenRBAudioUnit.o "$lib" \
-    -framework Foundation -framework AVFoundation -framework AudioToolbox \
-    -framework CoreAudio -framework CoreAudioKit -framework UIKit \
-    -framework QuartzCore -framework Metal -framework MetalKit \
-    -framework CoreGraphics -framework CoreText -framework IOSurface \
-    -framework CoreVideo -framework Security \
-    -lc++ \
-    -o "$appex/OpenRB-338"
-cp ios/au/Info.plist "$appex/Info.plist"
-cp ios/AppIcon76x76.png ios/AppIcon76x76@2x.png "$appex/"
-codesign --force --sign - --timestamp=none "$appex/OpenRB-338"
-codesign --force --sign - --timestamp=none "$appex"
+rm -rf "$app" dist/Payload dist/OpenRB-338.ipa
+mkdir -p "$app"
 
 cp "$bin" "$app/OpenRB-338"
 cp ios/Info.plist "$app/Info.plist"
 cp ios/AppIcon76x76.png ios/AppIcon76x76@2x.png "$app/"
-mkdir -p "$app/PlugIns"
-cp -R "$appex" "$app/PlugIns/OpenRB-338.appex"
 # Four-char creator code. Old installers look for this file.
 printf 'APPL????' > "$app/PkgInfo"
 chmod 755 "$app/OpenRB-338"

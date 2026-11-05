@@ -41,18 +41,9 @@ twice the size. Two fingers on empty space move it, and fingers on the controls
 still play them. That option is off unless you turn it on. Export on the iPad writes WAV and FLAC. Songs copied into the app's Documents
 folder, through the Files app, are what File, Open can load.
 
-## In a host
-
-The same install includes an Audio Unit named OpenRB-338. It is a generator, so
-AUM lists it in a channel's source slot, not among the apps. That channel's
-effects process what it plays. Tap the plugin in AUM and the panel opens there.
-There is no keyboard. Press the host's play control: while that transport is
-moving, the song follows it and does not drift. Opened as the application, the
-clock is the song's own, and that audio stays on the speakers.
-
-The Audio Unit plays its own song on the built-in kit, starting from a short
-TR-909 pattern the panel shows. The song open in the application stays there:
-a free Apple ID cannot hand it to the plugin.
+The iPad package is the application. It does not include an Audio Unit, so a host
+such as AUM cannot load it or take its sound. The song's clock is its own, and
+playback continues when you leave the app.
 
 There is no App Store listing and no install package in Releases. The `.ipa` is the
 artifact `OpenRB-338-ipad` of the
