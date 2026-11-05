@@ -33,7 +33,8 @@ collection are on the original repository:
 
 The iPad application is the same panel, locked to landscape. The whole machine stays
 on screen. The status bar is hidden, so the menu sits at the top. The panel sits a
-few points above the bottom edge, so the TR-909 step row can be pressed.
+few points above the bottom edge, so the TR-909 step row can be pressed. A song that
+is playing keeps playing when you leave the app. That sound goes to the speakers.
 
 Several fingers can hold controls at once. Options, Large panel draws the panel at
 twice the size. Two fingers on empty space move it, and fingers on the controls
@@ -44,8 +45,9 @@ folder, through the Files app, are what File, Open can load.
 
 The same install includes an Audio Unit named OpenRB-338. It is a generator, so
 AUM lists it in a channel's source slot, not among the apps. That channel's
-effects process what it plays. It has no screen and no keyboard. While the host is playing, the pattern follows the host's tempo
-and does not drift. Opened as the application, the clock is the song's own.
+effects process what it plays. It has no screen and no keyboard. Press the host's
+play control: while that transport is moving, the pattern follows it and does not
+drift. Opened as the application, the clock is the song's own.
 
 The Audio Unit plays a short TR-909 pattern on the built-in kit. The standard kit has
 no demo song, and the song open in the application stays there: a free Apple ID cannot

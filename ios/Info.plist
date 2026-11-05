@@ -24,6 +24,20 @@
 	<true/>
 	<key>MinimumOSVersion</key>
 	<string>15.0</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+	</array>
+	<key>CFBundleIcons~ipad</key>
+	<dict>
+		<key>CFBundlePrimaryIcon</key>
+		<dict>
+			<key>CFBundleIconFiles</key>
+			<array>
+				<string>AppIcon76x76</string>
+			</array>
+		</dict>
+	</dict>
 	<key>UIDeviceFamily</key>
 	<array>
 		<integer>2</integer>

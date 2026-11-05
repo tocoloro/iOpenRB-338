@@ -47,11 +47,13 @@ clang -fobjc-arc -fmodules -fapplication-extension -isysroot "$SDKROOT" -arch ar
     -framework CoreAudio \
     -o "$appex/OpenRB-338"
 cp ios/au/Info.plist "$appex/Info.plist"
+cp ios/AppIcon76x76.png ios/AppIcon76x76@2x.png "$appex/"
 codesign --force --sign - --timestamp=none "$appex/OpenRB-338"
 codesign --force --sign - --timestamp=none "$appex"
 
 cp "$bin" "$app/OpenRB-338"
 cp ios/Info.plist "$app/Info.plist"
+cp ios/AppIcon76x76.png ios/AppIcon76x76@2x.png "$app/"
 mkdir -p "$app/PlugIns"
 cp -R "$appex" "$app/PlugIns/OpenRB-338.appex"
 # Four-char creator code. Old installers look for this file.

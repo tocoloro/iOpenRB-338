@@ -64,34 +64,39 @@ impl Host {
             44_100.0
         };
         let mut done = 0;
-        let mut beat = if beat.is_finite() { beat } else { 0.0 };
+        let mut beat = beat;
         while done < n {
             let k = (n - done).min(MAX_OUT);
-            self.render_slice(
-                &mut left[done..done + k],
-                &mut right[done..done + k],
-                rate,
-                tempo_bpm,
-                beat,
-                playing,
-            );
-            if playing && tempo_bpm.is_finite() && tempo_bpm > 0.0 {
+            self.sync_clock(tempo_bpm, beat, playing);
+            self.render_slice(&mut left[done..done + k], &mut right[done..done + k], rate);
+            if playing && beat.is_finite() && tempo_bpm.is_finite() && tempo_bpm > 0.0 {
                 beat += k as f64 * tempo_bpm / 60.0 / rate;
             }
             done += k;
         }
     }
 
-    fn render_slice(
-        &mut self,
-        left: &mut [f32],
-        right: &mut [f32],
-        rate: f64,
-        tempo_bpm: f64,
-        beat: f64,
-        playing: bool,
-    ) {
-        self.engine.follow_host(tempo_bpm, beat, playing);
+    /// A finite `beat` locks the clock to the host. A host that is playing but has no beat
+    /// (not a number) leaves the engine's own clock running, so the pattern is not pulled
+    /// back to zero on every buffer. A stopped host halts.
+    fn sync_clock(&mut self, tempo_bpm: f64, beat: f64, playing: bool) {
+        if !playing {
+            self.engine.follow_host(tempo_bpm, 0.0, false);
+            return;
+        }
+        if beat.is_finite() {
+            self.engine.follow_host(tempo_bpm, beat, true);
+            return;
+        }
+        if tempo_bpm.is_finite() && (1.0..=999.0).contains(&tempo_bpm) {
+            self.engine.set_tempo((tempo_bpm * 1000.0).round() as u32);
+        }
+        if !self.engine.playing() {
+            self.engine.play();
+        }
+    }
+
+    fn render_slice(&mut self, left: &mut [f32], right: &mut [f32], rate: f64) {
         let n = left.len();
         let need = ((n as f64) * 44_100.0 / rate).round() as usize;
         let need = need.clamp(1, MAX_ENGINE);
@@ -258,5 +263,18 @@ mod tests {
         assert!(host.engine.playing());
         assert!(left.iter().any(|s| s.abs() > 1.0e-4));
         assert!(host.engine.fault().is_none());
+    }
+
+    #[test]
+    fn a_playing_host_without_a_beat_does_not_rewind() {
+        let mut host = Host::new();
+        let mut left = vec![0.0; 256];
+        let mut right = vec![0.0; 256];
+        host.render(&mut left, &mut right, 44_100.0, f64::NAN, f64::NAN, true);
+        let pos = host.engine.frame.seq.pos;
+        assert!(host.engine.playing());
+        assert!(pos > 1.0);
+        host.render(&mut left, &mut right, 44_100.0, f64::NAN, f64::NAN, true);
+        assert!(host.engine.frame.seq.pos > pos);
     }
 }

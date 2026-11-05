@@ -52,6 +52,9 @@ winit = "0.30.13"
 # Startup notes go to Documents/openrb.log. eframe logs the GPU error and then
 # exits; without a logger that line never reaches the iPad.
 log = "0.4"
+# The playback session, so a song keeps sounding after the app leaves the screen.
+# The same crate cpal uses on iOS.
+objc2-avf-audio = { version = "0.3.2", features = ["std", "AVAudioSession", "AVAudioSessionTypes"] }
 
 [dev-dependencies]
 orb-ui-art = { path = "../orb-ui-art" }

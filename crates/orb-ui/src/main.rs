@@ -276,6 +276,22 @@ fn attach_parent_console() {
     }
 }
 
+/// The default session stops when the app leaves the screen. Playback keeps a
+/// song going, and mixes with a host such as AUM instead of cutting it off.
+#[cfg(target_os = "ios")]
+fn play_in_background() {
+    use objc2_avf_audio::{
+        AVAudioSession, AVAudioSessionCategoryOptions, AVAudioSessionCategoryPlayback,
+    };
+    let Some(category) = (unsafe { AVAudioSessionCategoryPlayback }) else {
+        return;
+    };
+    let session = unsafe { AVAudioSession::sharedInstance() };
+    let options = AVAudioSessionCategoryOptions::MixWithOthers;
+    let _ = unsafe { session.setCategory_withOptions_error(category, options) };
+    let _ = unsafe { session.setActive_error(true) };
+}
+
 fn main() -> eframe::Result {
     #[cfg(all(windows, not(debug_assertions)))]
     attach_parent_console();
@@ -322,6 +338,8 @@ fn main() -> eframe::Result {
                 }
             }
         }
+        #[cfg(target_os = "ios")]
+        play_in_background();
         match orb_player::output::start(audio) {
             Ok(s) => {
                 audio_health = Some(s.health());
