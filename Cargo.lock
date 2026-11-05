@@ -2927,6 +2927,8 @@ name = "orb-au"
 version = "0.1.0"
 dependencies = [
  "orb-engine",
+ "orb-player",
+ "orb-ui",
  "rbm",
 ]
 
@@ -3002,6 +3004,7 @@ dependencies = [
  "orb-player",
  "orb-testkit",
  "orb-ui-art",
+ "pollster 0.4.0",
  "rbm",
  "rbs",
  "resvg 0.45.1",

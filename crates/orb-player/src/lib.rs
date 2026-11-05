@@ -423,6 +423,9 @@ pub struct Audio {
     preview_pos: usize,
     /// It plays (engine `+0x428` not null).
     preview_on: bool,
+    /// The host transport for the next engine call, if a host set one
+    /// ([`Audio::follow_host`]). The desktop stream leaves this empty.
+    host: Option<(f64, f64, bool)>,
 }
 
 impl Player {
@@ -455,6 +458,7 @@ impl Player {
             preview: None,
             preview_pos: 0,
             preview_on: false,
+            host: None,
         };
         audio.publish();
         let player = Player {
@@ -578,6 +582,12 @@ impl Audio {
         });
     }
 
+    /// The host's play, tempo and beat for the next engine calls. The desktop stream never
+    /// sets this. A later call replaces the previous one.
+    pub fn follow_host(&mut self, tempo_bpm: f64, beat: f64, playing: bool) {
+        self.host = Some((tempo_bpm, beat, playing));
+    }
+
     /// [`Audio::render_i16`] as f32 (`x / 32768`, exact).
     pub fn render_f32(&mut self, out: &mut [f32]) {
         self.pull(out.len() / 2, |i, l, r| {
@@ -607,6 +617,12 @@ impl Audio {
         while self.garbage.slots() >= GARBAGE_PER_COMMAND {
             let Ok(c) = self.commands.pop() else { break };
             self.apply(c);
+        }
+        // The host wins over a play or a tempo the panel just sent.
+        // Once per host update. Later calls in the same engine buffer keep running,
+        // so a repeated lock does not pull the song back to the same beat.
+        if let Some((tempo, beat, playing)) = self.host.take() {
+            self.current.lock_to_host(tempo, beat, playing);
         }
         // a faulting call writes nothing (`Engine::fault`): silence rather than the last call
         self.buf.fill(0);

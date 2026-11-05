@@ -45,13 +45,14 @@ folder, through the Files app, are what File, Open can load.
 
 The same install includes an Audio Unit named OpenRB-338. It is a generator, so
 AUM lists it in a channel's source slot, not among the apps. That channel's
-effects process what it plays. It has no screen and no keyboard. Press the host's
-play control: while that transport is moving, the pattern follows it and does not
-drift. Opened as the application, the clock is the song's own.
+effects process what it plays. Tap the plugin in AUM and the panel opens there.
+There is no keyboard. Press the host's play control: while that transport is
+moving, the song follows it and does not drift. Opened as the application, the
+clock is the song's own, and that audio stays on the speakers.
 
-The Audio Unit plays a short TR-909 pattern on the built-in kit. The standard kit has
-no demo song, and the song open in the application stays there: a free Apple ID cannot
-hand it to the plugin.
+The Audio Unit plays its own song on the built-in kit, starting from a short
+TR-909 pattern the panel shows. The song open in the application stays there:
+a free Apple ID cannot hand it to the plugin.
 
 There is no App Store listing and no install package in Releases. The `.ipa` is the
 artifact `OpenRB-338-ipad` of the

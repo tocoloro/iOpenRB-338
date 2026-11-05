@@ -1,5 +1,8 @@
 #import <AVFoundation/AVFoundation.h>
 #import <AudioToolbox/AudioToolbox.h>
+#import <CoreAudioKit/CoreAudioKit.h>
+#import <Metal/Metal.h>
+#import <QuartzCore/CAMetalLayer.h>
 #import <math.h>
 #import <stdlib.h>
 
@@ -10,8 +13,18 @@ extern OrbAu *orb_au_new(void);
 extern void orb_au_free(OrbAu *au);
 extern void orb_au_render(OrbAu *au, float *left, float *right, uint32_t frames,
                           double host_rate, double tempo_bpm, double beat, int playing);
+// The panel. The main thread is the only caller. `layer` is a CAMetalLayer.
+extern void orb_au_ui_frame(OrbAu *au, void *layer, float width_pts, float height_pts, float scale,
+                            float bottom_inset);
+extern void orb_au_ui_touch(OrbAu *au, uint64_t touch_id, int phase, float x, float y);
+extern void orb_au_ui_detach(OrbAu *au);
 
 @interface OpenRBAudioUnit : AUAudioUnit
+- (OrbAu *)engine;
+@end
+
+@interface OpenRBViewController : AUViewControllerBase
+- (instancetype)initWithUnit:(OpenRBAudioUnit *)unit;
 @end
 
 @interface OpenRBAudioUnitFactory : NSObject <AUAudioUnitFactory>
@@ -193,6 +206,21 @@ enum { kOpenRBPullFrames = 4096 };
     };
 }
 
+- (OrbAu *)engine {
+    return _au;
+}
+
+- (void)requestViewControllerWithCompletionHandler:(void (^)(AUViewControllerBase *))handler {
+    if (handler == nil) {
+        return;
+    }
+    OpenRBAudioUnit *unit = self;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        OpenRBViewController *view = [[OpenRBViewController alloc] initWithUnit:unit];
+        handler(view);
+    });
+}
+
 @end
 
 @implementation OpenRBAudioUnitFactory
@@ -204,6 +232,160 @@ enum { kOpenRBPullFrames = 4096 };
 - (AUAudioUnit *)createAudioUnitWithComponentDescription:(AudioComponentDescription)desc
                                                    error:(NSError **)error {
     return [[OpenRBAudioUnit alloc] initWithComponentDescription:desc options:0 error:error];
+}
+
+@end
+
+// The panel AUM shows when the plugin is tapped. It is the same panel as the app.
+// The host already owns UIApplication, so this view draws into its own metal layer.
+
+@interface OpenRBMetalView : UIView
+@property (nonatomic, assign) OrbAu *au;
+@end
+
+@implementation OpenRBMetalView
+
++ (Class)layerClass {
+    return [CAMetalLayer class];
+}
+
+- (instancetype)initWithFrame:(CGRect)frame {
+    self = [super initWithFrame:frame];
+    if (self == nil) {
+        return nil;
+    }
+    self.multipleTouchEnabled = YES;
+    self.opaque = YES;
+    self.backgroundColor = [UIColor colorWithRed:0x1d / 255.0 green:0x21 / 255.0 blue:0x27 / 255.0 alpha:1];
+    CAMetalLayer *layer = (CAMetalLayer *)self.layer;
+    layer.pixelFormat = MTLPixelFormatBGRA8Unorm;
+    layer.framebufferOnly = YES;
+    layer.opaque = YES;
+    return self;
+}
+
+- (void)sendTouches:(NSSet<UITouch *> *)touches {
+    if (self.au == NULL) {
+        return;
+    }
+    for (UITouch *touch in touches) {
+        int phase = 0;
+        switch (touch.phase) {
+        case UITouchPhaseBegan:
+            phase = 0;
+            break;
+        case UITouchPhaseMoved:
+        case UITouchPhaseStationary:
+            phase = 1;
+            break;
+        case UITouchPhaseEnded:
+            phase = 2;
+            break;
+        case UITouchPhaseCancelled:
+            phase = 3;
+            break;
+        default:
+            continue;
+        }
+        CGPoint p = [touch locationInView:self];
+        orb_au_ui_touch(self.au, (uint64_t)(__bridge void *)touch, phase, (float)p.x, (float)p.y);
+    }
+}
+
+- (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    (void)event;
+    [self sendTouches:touches];
+}
+
+- (void)touchesMoved:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    (void)event;
+    [self sendTouches:touches];
+}
+
+- (void)touchesEnded:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    (void)event;
+    [self sendTouches:touches];
+}
+
+- (void)touchesCancelled:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    (void)event;
+    [self sendTouches:touches];
+}
+
+@end
+
+@interface OpenRBViewController ()
+@property (nonatomic, strong) OpenRBAudioUnit *unit;
+@property (nonatomic, strong) OpenRBMetalView *metal;
+@property (nonatomic, strong) CADisplayLink *link;
+@end
+
+@implementation OpenRBViewController
+
+- (instancetype)initWithUnit:(OpenRBAudioUnit *)unit {
+    self = [super initWithNibName:nil bundle:nil];
+    if (self == nil) {
+        return nil;
+    }
+    _unit = unit;
+    return self;
+}
+
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    self.view.backgroundColor = [UIColor colorWithRed:0x1d / 255.0 green:0x21 / 255.0 blue:0x27 / 255.0 alpha:1];
+    OpenRBMetalView *metal = [[OpenRBMetalView alloc] initWithFrame:self.view.bounds];
+    metal.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    metal.au = [self.unit engine];
+    [self.view addSubview:metal];
+    self.metal = metal;
+    self.link = [CADisplayLink displayLinkWithTarget:self selector:@selector(tick:)];
+    [self.link addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
+}
+
+- (void)tick:(CADisplayLink *)link {
+    (void)link;
+    OpenRBMetalView *metal = self.metal;
+    if (metal == nil || metal.au == NULL) {
+        return;
+    }
+    CGSize size = metal.bounds.size;
+    CGFloat scale = metal.contentScaleFactor;
+    if (scale < 1) {
+        scale = 1;
+    }
+    CAMetalLayer *layer = (CAMetalLayer *)metal.layer;
+    layer.contentsScale = scale;
+    layer.drawableSize = CGSizeMake(size.width * scale, size.height * scale);
+    UIEdgeInsets insets = self.view.safeAreaInsets;
+    orb_au_ui_frame(metal.au, (__bridge void *)layer, (float)size.width, (float)size.height, (float)scale,
+                    (float)insets.bottom);
+}
+
+- (void)viewWillAppear:(BOOL)animated {
+    [super viewWillAppear:animated];
+    if (self.link == nil) {
+        self.link = [CADisplayLink displayLinkWithTarget:self selector:@selector(tick:)];
+        [self.link addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
+    }
+}
+
+- (void)viewWillDisappear:(BOOL)animated {
+    [super viewWillDisappear:animated];
+    // The display link retains this controller. Invalidating it here is what lets the
+    // controller go away when AUM closes the panel.
+    [self.link invalidate];
+    self.link = nil;
+    if (self.metal.au != NULL) {
+        orb_au_ui_detach(self.metal.au);
+    }
+}
+
+- (void)dealloc {
+    [_link invalidate];
+    if (_metal.au != NULL) {
+        orb_au_ui_detach(_metal.au);
+    }
 }
 
 @end

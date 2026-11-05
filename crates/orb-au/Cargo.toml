@@ -11,4 +11,8 @@ crate-type = ["staticlib", "rlib"]
 
 [dependencies]
 orb-engine = { path = "../orb-engine" }
+orb-player = { path = "../orb-player" }
 rbm = { path = "../rbm" }
+
+[target.'cfg(target_os = "ios")'.dependencies]
+orb-ui = { path = "../orb-ui" }

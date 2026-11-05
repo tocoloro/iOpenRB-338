@@ -6,8 +6,8 @@
 # Impactor or SideServer replaces it with a free Apple ID. Nothing here uses a
 # paid certificate.
 #
-# The extension is dist/OpenRB-338.app/PlugIns/OpenRB-338.appex. It has no view
-# and no keyboard. A host loads it on a channel. Writes dist/OpenRB-338.ipa.
+# The extension is dist/OpenRB-338.app/PlugIns/OpenRB-338.appex. A host loads it
+# on a channel and can show its panel. Writes dist/OpenRB-338.ipa.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -44,7 +44,11 @@ clang -fobjc-arc -fmodules -fapplication-extension -isysroot "$SDKROOT" -arch ar
     -Wl,-e,_NSExtensionMain \
     dist/OpenRBAudioUnit.o "$lib" \
     -framework Foundation -framework AVFoundation -framework AudioToolbox \
-    -framework CoreAudio \
+    -framework CoreAudio -framework CoreAudioKit -framework UIKit \
+    -framework QuartzCore -framework Metal -framework MetalKit \
+    -framework CoreGraphics -framework CoreText -framework IOSurface \
+    -framework CoreVideo -framework Security \
+    -lc++ \
     -o "$appex/OpenRB-338"
 cp ios/au/Info.plist "$appex/Info.plist"
 cp ios/AppIcon76x76.png ios/AppIcon76x76@2x.png "$appex/"

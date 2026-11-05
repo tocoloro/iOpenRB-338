@@ -55,6 +55,8 @@ log = "0.4"
 # The playback session, so a song keeps sounding after the app leaves the screen.
 # The same crate cpal uses on iOS.
 objc2-avf-audio = { version = "0.3.2", features = ["std", "AVAudioSession", "AVAudioSessionTypes"] }
+# The Audio Unit view builds the GPU on the host's main thread. There is no async runtime.
+pollster = "0.4"
 
 [dev-dependencies]
 orb-ui-art = { path = "../orb-ui-art" }

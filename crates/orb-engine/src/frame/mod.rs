@@ -1373,6 +1373,26 @@ impl Engine {
         }
     }
 
+    /// One host buffer. A negative beat is the host's count-in, so the song stays quiet until
+    /// beat 0. A playing host that reports no beat (not a number) does not rewind: the song
+    /// keeps the position it already has.
+    pub fn lock_to_host(&mut self, tempo_bpm: f64, beat: f64, playing: bool) {
+        if !playing || (beat.is_finite() && beat < 0.0) {
+            self.follow_host(tempo_bpm, 0.0, false);
+            return;
+        }
+        if beat.is_finite() {
+            self.follow_host(tempo_bpm, beat, true);
+            return;
+        }
+        if tempo_bpm.is_finite() && (1.0..=999.0).contains(&tempo_bpm) {
+            self.set_tempo((tempo_bpm * 1000.0).round() as u32);
+        }
+        if !self.playing() {
+            self.play();
+        }
+    }
+
     /// `sub_100218A0`: the stop of `sub_1001BE74`'s song switch, without the bar locate of msg
     /// 35 `{1,0}`: when playing, clear the play flag and run slot 4; prune every track; in song
     /// mode chase every track to the current tick.

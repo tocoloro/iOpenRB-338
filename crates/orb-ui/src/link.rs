@@ -366,6 +366,19 @@ impl Link {
         (link, audio)
     }
 
+    /// Copies the engine's pattern arrays into the copy the panel draws, and marks every
+    /// section dirty so the next sync fills the step buttons. Used when the engine was edited
+    /// before the callback started.
+    pub fn refresh_patterns(&mut self, engine: &mut orb_engine::frame::Engine) {
+        self.patterns = std::array::from_fn(|c| {
+            engine.frame.devices.channels[c]
+                .patterns_mut()
+                .map(|p| p.to_vec())
+                .unwrap_or_default()
+        });
+        self.shown = [None; 4];
+    }
+
     /// The open song's tracks when recording has changed them since it was opened (the merge
     /// of the loop wrap, record off or the song end), else `None`: Save writes these, as the
     /// original's save writes the tracks it reads back from the DLL (`sub_437CFF`).

@@ -1,17 +1,27 @@
 //! The Audio Unit side of the iPad build. A host (AUM and the like) loads it on a
-//! channel and processes its output. There is no view and no keyboard.
+//! channel and processes its output. The panel is drawn in the view the host asks for.
+//! There is no keyboard.
 //!
-//! The clock here follows the host. The application never calls [`Engine::follow_host`],
-//! so a song opened as the application keeps the song's own tempo. The unit plays a short
-//! TR-909 pattern on the built-in kit. The standard kit has no demo song, and a free Apple
-//! ID cannot share the song open in the application with the plugin.
+//! The clock follows the host. The application never calls `Engine::follow_host`,
+//! so a song opened as the application keeps the song's own tempo. The unit plays its
+//! own song, on the built-in kit: a short TR-909 pattern the panel shows and can edit.
+//! A free Apple ID cannot share the song open in the application with the plugin.
 
+use std::cell::UnsafeCell;
+#[cfg(any(test, not(target_os = "ios")))]
 use std::sync::Arc;
 
+#[cfg(test)]
 use orb_engine::frame::{Devices, Engine, MAX_FRAMES};
+#[cfg(test)]
 use orb_engine::process::ProcessState;
+#[cfg(test)]
 use orb_engine::song::Device;
+#[cfg(any(test, not(target_os = "ios")))]
 use orb_engine::tables::Tables;
+use orb_player::Audio;
+#[cfg(not(target_os = "ios"))]
+use orb_player::Player;
 
 /// Host frames rendered in one slice. The unit asks the host for no more than this.
 const MAX_OUT: usize = 4096;
@@ -19,7 +29,9 @@ const MAX_OUT: usize = 4096;
 /// frames at 44.1 kHz.
 const MAX_ENGINE: usize = 24_000;
 
-/// The engine and the buffers the render callback reuses.
+/// The engine and the buffers the render callback reuses. The live unit uses
+/// [`orb_player::Audio`]; this is the clock the tests drive directly.
+#[cfg(test)]
 pub struct Host {
     engine: Engine,
     pcm: Vec<i16>,
@@ -27,6 +39,7 @@ pub struct Host {
     eng_r: Vec<f32>,
 }
 
+#[cfg(test)]
 impl Host {
     /// An engine on the built-in kit, with a short TR-909 pattern in pattern 0.
     pub fn new() -> Self {
@@ -81,20 +94,7 @@ impl Host {
     /// back to zero on every buffer. A stopped host halts. A negative beat is the host's
     /// count-in: stay quiet until beat 0.
     fn sync_clock(&mut self, tempo_bpm: f64, beat: f64, playing: bool) {
-        if !playing || (beat.is_finite() && beat < 0.0) {
-            self.engine.follow_host(tempo_bpm, 0.0, false);
-            return;
-        }
-        if beat.is_finite() {
-            self.engine.follow_host(tempo_bpm, beat, true);
-            return;
-        }
-        if tempo_bpm.is_finite() && (1.0..=999.0).contains(&tempo_bpm) {
-            self.engine.set_tempo((tempo_bpm * 1000.0).round() as u32);
-        }
-        if !self.engine.playing() {
-            self.engine.play();
-        }
+        self.engine.lock_to_host(tempo_bpm, beat, playing);
     }
 
     fn render_slice(&mut self, left: &mut [f32], right: &mut [f32], rate: f64) {
@@ -117,6 +117,7 @@ impl Host {
     }
 }
 
+#[cfg(test)]
 impl Default for Host {
     fn default() -> Self {
         Self::new()
@@ -125,6 +126,7 @@ impl Default for Host {
 
 /// Bass on the beat, snare on the backbeat, closed hats on the offbeats. Pattern 0,
 /// which is the pattern a fresh engine plays.
+#[cfg(test)]
 fn program_pattern(engine: &mut Engine) {
     for step in [0, 4, 8, 12] {
         engine.step_field(Device::Tr909, 0, step, 1, 1);
@@ -160,16 +162,125 @@ fn stretch(src_l: &[f32], src_r: &[f32], dst_l: &mut [f32], dst_r: &mut [f32]) {
     }
 }
 
-/// The host's engine. The audio callback is the only caller.
-pub struct OrbAu {
-    host: Host,
+/// Engine-rate scratch for one host buffer. The audio thread is the only user.
+struct Scratch {
+    pcm: Vec<f32>,
+    left: Vec<f32>,
+    right: Vec<f32>,
 }
 
+impl Scratch {
+    fn new() -> Self {
+        Self {
+            pcm: vec![0.0; MAX_ENGINE * 2],
+            left: vec![0.0; MAX_ENGINE],
+            right: vec![0.0; MAX_ENGINE],
+        }
+    }
+}
+
+/// The callback half. The render thread is the only user.
+struct Callback {
+    audio: Audio,
+    scratch: Scratch,
+}
+
+/// The host's unit. The render thread uses `callback`. The main thread uses `hosted`.
+pub struct OrbAu {
+    callback: UnsafeCell<Callback>,
+    /// Keeps the command channel open where the panel does not.
+    #[cfg(not(target_os = "ios"))]
+    _player: Player,
+    #[cfg(target_os = "ios")]
+    hosted: UnsafeCell<orb_ui::hosted::Hosted>,
+}
+
+fn unit() -> OrbAu {
+    #[cfg(target_os = "ios")]
+    {
+        let (hosted, audio) = orb_ui::hosted::Hosted::new();
+        OrbAu {
+            callback: UnsafeCell::new(Callback {
+                audio,
+                scratch: Scratch::new(),
+            }),
+            hosted: UnsafeCell::new(hosted),
+        }
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let (player, audio) = Player::new(
+            Arc::new(Tables::new()),
+            Some(rbm::standard::builtin_samples()),
+        );
+        OrbAu {
+            callback: UnsafeCell::new(Callback {
+                audio,
+                scratch: Scratch::new(),
+            }),
+            _player: player,
+        }
+    }
+}
+
+fn render_callback(
+    cb: &mut Callback,
+    left: &mut [f32],
+    right: &mut [f32],
+    host_rate: f64,
+    tempo_bpm: f64,
+    mut beat: f64,
+    playing: bool,
+) {
+    let n = left.len().min(right.len());
+    let rate = if host_rate.is_finite() && host_rate >= 8_000.0 {
+        host_rate
+    } else {
+        44_100.0
+    };
+    let mut done = 0;
+    while done < n {
+        let k = (n - done).min(MAX_OUT);
+        cb.audio.follow_host(tempo_bpm, beat, playing);
+        render_slice(
+            &mut cb.audio,
+            &mut cb.scratch,
+            &mut left[done..done + k],
+            &mut right[done..done + k],
+            rate,
+        );
+        if playing && beat.is_finite() && tempo_bpm.is_finite() && tempo_bpm > 0.0 {
+            beat += k as f64 * tempo_bpm / 60.0 / rate;
+        }
+        done += k;
+    }
+}
+
+fn render_slice(
+    audio: &mut Audio,
+    scratch: &mut Scratch,
+    left: &mut [f32],
+    right: &mut [f32],
+    rate: f64,
+) {
+    let n = left.len();
+    let need = ((n as f64) * 44_100.0 / rate).round() as usize;
+    let need = need.clamp(1, MAX_ENGINE);
+    audio.render_f32(&mut scratch.pcm[..need * 2]);
+    for i in 0..need {
+        scratch.left[i] = scratch.pcm[2 * i];
+        scratch.right[i] = scratch.pcm[2 * i + 1];
+    }
+    stretch(&scratch.left[..need], &scratch.right[..need], left, right);
+}
+
+/// The host's engine. The audio callback is the only caller of [`orb_au_render`].
+///
 /// # Safety
 /// Returns a unit the caller frees with [`orb_au_free`].
 #[unsafe(no_mangle)]
 pub extern "C" fn orb_au_new() -> *mut OrbAu {
-    Box::into_raw(Box::new(OrbAu { host: Host::new() }))
+    Box::into_raw(Box::new(unit()))
 }
 
 /// # Safety
@@ -200,9 +311,55 @@ pub unsafe extern "C" fn orb_au_render(
     let n = frames as usize;
     let left = unsafe { std::slice::from_raw_parts_mut(left, n) };
     let right = unsafe { std::slice::from_raw_parts_mut(right, n) };
-    unsafe { &mut *au }
-        .host
-        .render(left, right, host_rate, tempo_bpm, beat, playing != 0);
+    // The main thread uses `hosted` only. This borrow is the callback half.
+    let cb = unsafe { &mut *(*au).callback.get() };
+    render_callback(cb, left, right, host_rate, tempo_bpm, beat, playing != 0);
+}
+
+/// # Safety
+/// `au` is a live [`orb_au_new`] pointer. The main thread is the only caller.
+/// `layer` is a `CAMetalLayer` that stays alive until [`orb_au_ui_detach`].
+#[cfg(target_os = "ios")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn orb_au_ui_frame(
+    au: *mut OrbAu,
+    layer: *mut std::ffi::c_void,
+    width_pts: f32,
+    height_pts: f32,
+    scale: f32,
+    bottom_inset: f32,
+) {
+    if au.is_null() || layer.is_null() {
+        return;
+    }
+    let hosted = unsafe { &mut *(*au).hosted.get() };
+    hosted.frame(layer, width_pts, height_pts, scale, bottom_inset);
+}
+
+/// # Safety
+/// `au` is a live [`orb_au_new`] pointer. The main thread is the only caller.
+/// `phase` is 0 began, 1 moved, 2 ended, 3 cancelled.
+#[cfg(target_os = "ios")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn orb_au_ui_touch(au: *mut OrbAu, id: u64, phase: i32, x: f32, y: f32) {
+    if au.is_null() {
+        return;
+    }
+    let hosted = unsafe { &mut *(*au).hosted.get() };
+    hosted.touch(id, phase, x, y);
+}
+
+/// # Safety
+/// `au` is a live [`orb_au_new`] pointer. The main thread is the only caller.
+/// Drops the metal surface. The song stays.
+#[cfg(target_os = "ios")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn orb_au_ui_detach(au: *mut OrbAu) {
+    if au.is_null() {
+        return;
+    }
+    let hosted = unsafe { &mut *(*au).hosted.get() };
+    hosted.detach();
 }
 
 #[cfg(test)]
