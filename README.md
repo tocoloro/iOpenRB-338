@@ -56,7 +56,7 @@ a free Apple ID cannot hand it to the plugin.
 
 There is no App Store listing and no install package in Releases. The `.ipa` is the
 artifact `OpenRB-338-ipad` of the
-[ios workflow](https://github.com/tocoloro/iOpenReverb-338/actions/workflows/ios.yml).
+[ios workflow](https://github.com/tocoloro/iOpenRB-338/actions/workflows/ios.yml).
 
 ## Install it on an iPad
 

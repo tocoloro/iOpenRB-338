@@ -17,7 +17,7 @@
 //!   (task-099). "Demo Song" opens the `Demo.rbs` of the current mod as an unsaved song (task-094).
 //! - **Options**: the Vintage ReBirth Synth Sound flag (GLOB byte 482; Edit menu item 323 of the
 //!   original), Large panel (twice the size; two fingers on empty space pan it) and the keyboard
-//!   mode (Ctrl/Cmd+F, Ctrl/Cmd+G; docs/ui_spec.md section 10).
+//!   mode (Ctrl/Cmd+F, Ctrl/Cmd+G; docs/ui_spec.md section 10). The iPad has no keyboard mode.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -1243,26 +1243,31 @@ impl App {
                                 cmd = Some(Cmd::ToggleLargePanel);
                                 ui.close();
                             }
-                            ui.separator();
-                            let ctx = ui.ctx().clone();
-                            let synth = format!(
-                                "Program Synth ({})",
-                                shortcuts::text(&ctx, &shortcuts::KEYS_SYNTH)
-                            );
-                            let patterns = format!(
-                                "Select Patterns ({})",
-                                shortcuts::text(&ctx, &shortcuts::KEYS_PATTERNS)
-                            );
-                            if ui.radio(self.key_mode == KeyMode::Synth, synth).clicked() {
-                                cmd = Some(Cmd::SetKeyMode(KeyMode::Synth));
-                                ui.close();
-                            }
-                            if ui
-                                .radio(self.key_mode == KeyMode::Patterns, patterns)
-                                .clicked()
+                            // A keyboard mode. The iPad has no keyboard, so the two items are
+                            // absent.
+                            #[cfg(not(target_os = "ios"))]
                             {
-                                cmd = Some(Cmd::SetKeyMode(KeyMode::Patterns));
-                                ui.close();
+                                ui.separator();
+                                let ctx = ui.ctx().clone();
+                                let synth = format!(
+                                    "Program Synth ({})",
+                                    shortcuts::text(&ctx, &shortcuts::KEYS_SYNTH)
+                                );
+                                let patterns = format!(
+                                    "Select Patterns ({})",
+                                    shortcuts::text(&ctx, &shortcuts::KEYS_PATTERNS)
+                                );
+                                if ui.radio(self.key_mode == KeyMode::Synth, synth).clicked() {
+                                    cmd = Some(Cmd::SetKeyMode(KeyMode::Synth));
+                                    ui.close();
+                                }
+                                if ui
+                                    .radio(self.key_mode == KeyMode::Patterns, patterns)
+                                    .clicked()
+                                {
+                                    cmd = Some(Cmd::SetKeyMode(KeyMode::Patterns));
+                                    ui.close();
+                                }
                             }
                         });
                         // Last in the bar. An item is one line of `HELP_ITEMS`.
@@ -1282,10 +1287,14 @@ impl App {
     }
 }
 
-/// The items of the Help menu, in order.
+/// The items of the Help menu, in order. The iPad has no keyboard shortcuts.
 const HELP_ITEMS: &[(&str, Cmd)] = &[
+    #[cfg(not(target_os = "ios"))]
     ("Keyboard Shortcuts...", Cmd::KeyHelp),
+    #[cfg(not(target_os = "ios"))]
     ("About OpenRB-338...", Cmd::About),
+    #[cfg(target_os = "ios")]
+    ("About iOpenRB-338...", Cmd::About),
 ];
 
 /// A menu item with its shortcut; true when clicked (the menu closes).

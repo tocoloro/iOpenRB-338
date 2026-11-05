@@ -7,8 +7,9 @@
 #import <stdlib.h>
 
 // The engine, built by crates/orb-au. The host supplies the transport.
-// The principal class is the view controller: a host only offers the panel
-// when that class is the extension's entry point.
+// The principal class is an AUViewController. On iOS that is a real class;
+// AUViewControllerBase is only a typedef of UIViewController, and a host
+// rejects the panel with paramErr (-50) when the entry point is that.
 typedef struct OrbAu OrbAu;
 extern OrbAu *orb_au_new(void);
 extern void orb_au_free(OrbAu *au);
@@ -28,7 +29,7 @@ extern void orb_au_ui_detach(OrbAu *au);
 @end
 
 // Principal class of the extension, and the panel AUM shows.
-@interface OpenRBViewController : AUViewControllerBase <AUAudioUnitFactory>
+@interface OpenRBViewController : AUViewController <AUAudioUnitFactory>
 @end
 
 enum { kOpenRBPullFrames = 4096 };
@@ -211,13 +212,20 @@ enum { kOpenRBPullFrames = 4096 };
     return _au;
 }
 
-- (void)requestViewControllerWithCompletionHandler:(void (^)(AUViewControllerBase *))handler {
+- (void)requestViewControllerWithCompletionHandler:(void (^)(AUViewControllerBase *__nullable))handler {
     if (handler == nil) {
         return;
     }
-    // Deliver it here. A host that is already on the main thread waits for this
-    // call; posting it back to the main queue never arrives, so the tap does nothing.
-    handler(self.panel);
+    OpenRBViewController *view = self.panel;
+    // On the main thread, deliver now. A host that is already there waits for
+    // this call. From any other thread, the view has to be created on main.
+    if ([NSThread isMainThread]) {
+        handler(view);
+        return;
+    }
+    dispatch_async(dispatch_get_main_queue(), ^{
+        handler(view);
+    });
 }
 
 @end
@@ -319,7 +327,7 @@ enum { kOpenRBPullFrames = 4096 };
 }
 
 - (void)beginRequestWithExtensionContext:(NSExtensionContext *)context {
-    (void)context;
+    [super beginRequestWithExtensionContext:context];
 }
 
 - (AUAudioUnit *)createAudioUnitWithComponentDescription:(AudioComponentDescription)desc

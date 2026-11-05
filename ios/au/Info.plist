@@ -19,7 +19,7 @@
 	<key>CFBundleShortVersionString</key>
 	<string>1.0</string>
 	<key>CFBundleVersion</key>
-	<string>2</string>
+	<string>3</string>
 	<key>MinimumOSVersion</key>
 	<string>15.0</string>
 	<key>CFBundleIcons~ipad</key>
@@ -58,7 +58,7 @@
 					<key>type</key>
 					<string>augn</string>
 					<key>version</key>
-					<integer>65537</integer>
+					<integer>65538</integer>
 				</dict>
 			</array>
 		</dict>

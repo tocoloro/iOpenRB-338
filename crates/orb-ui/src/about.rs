@@ -21,11 +21,16 @@ const CONTENT_W: f32 = 450.0;
 /// The width of the label column of the collection lines (the links start at TEXT_X + this).
 const LABEL_W: f32 = 100.0;
 /// 156 with one link line (task-115), plus two lines at the same 22 pt spacing (task-138).
-const CONTENT_H: f32 = 200.0;
+/// The iPad adds two lines above that: this build, then the original project.
+const IPAD_CREDIT: f32 = if cfg!(target_os = "ios") { 44.0 } else { 0.0 };
+const CONTENT_H: f32 = 200.0 + IPAD_CREDIT;
 const TEXT_X: f32 = 108.0;
 
 /// The name of the app.
 pub const NAME: &str = "OpenRB-338";
+/// This iPad build, credited before the original project.
+pub const IPAD_NAME: &str = "iOpenRB-338";
+pub const IPAD_URL: &str = "https://github.com/tocoloro/iOpenRB-338";
 /// The project page.
 pub const URL: &str = "https://github.com/pingw33n/openrb-338";
 /// The user's public collections, shown under the project page as `label url` (task-138).
@@ -84,7 +89,12 @@ impl App {
         let t = logo_anim::time_now(now, self.about_start.filter(|_| self.logo_anim));
         let mut open = true;
         // centered the way File > Info is (info.rs): pivot, default place, an id per open
-        egui::Window::new(format!("About {NAME}"))
+        let title = if cfg!(target_os = "ios") {
+            format!("About {IPAD_NAME}")
+        } else {
+            format!("About {NAME}")
+        };
+        egui::Window::new(title)
             .id(self.about_id())
             .open(&mut open)
             .collapsible(false)
@@ -120,13 +130,23 @@ impl App {
                 line(ui, 104.0, &|ui| {
                     ui.label(RichText::new(format!("Version {VERSION}")).color(INK_DIM));
                 });
-                line(ui, 126.0, &|ui| {
+                // iPad: this build first, then pingw33n's project. Desktop keeps its places.
+                #[cfg(target_os = "ios")]
+                {
+                    line(ui, 126.0, &|ui| {
+                        ui.label(RichText::new(IPAD_NAME).color(INK_DIM));
+                    });
+                    line(ui, 148.0, &|ui| {
+                        ui.hyperlink_to(IPAD_URL, IPAD_URL);
+                    });
+                }
+                line(ui, 126.0 + IPAD_CREDIT, &|ui| {
                     ui.hyperlink_to(URL, URL);
                 });
                 for (i, (label, url)) in COLLECTIONS.into_iter().enumerate() {
                     // the label and the link each in a rect of their own, so the links start at
                     // exactly the same x whatever the width of the label
-                    let y = 148.0 + 22.0 * i as f32;
+                    let y = 148.0 + IPAD_CREDIT + 22.0 * i as f32;
                     line(ui, y, &|ui| {
                         ui.label(RichText::new(label).color(INK_DIM));
                     });
