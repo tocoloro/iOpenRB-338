@@ -6,8 +6,9 @@
 #import <math.h>
 #import <stdlib.h>
 
-// The engine, built by crates/orb-au. No view and no note input: the host
-// supplies the transport, and the pattern follows that.
+// The engine, built by crates/orb-au. The host supplies the transport.
+// The principal class is the view controller: a host only offers the panel
+// when that class is the extension's entry point.
 typedef struct OrbAu OrbAu;
 extern OrbAu *orb_au_new(void);
 extern void orb_au_free(OrbAu *au);
@@ -19,15 +20,15 @@ extern void orb_au_ui_frame(OrbAu *au, void *layer, float width_pts, float heigh
 extern void orb_au_ui_touch(OrbAu *au, uint64_t touch_id, int phase, float x, float y);
 extern void orb_au_ui_detach(OrbAu *au);
 
+@class OpenRBViewController;
+
 @interface OpenRBAudioUnit : AUAudioUnit
+@property (nonatomic, weak) OpenRBViewController *panel;
 - (OrbAu *)engine;
 @end
 
-@interface OpenRBViewController : AUViewControllerBase
-- (instancetype)initWithUnit:(OpenRBAudioUnit *)unit;
-@end
-
-@interface OpenRBAudioUnitFactory : NSObject <AUAudioUnitFactory>
+// Principal class of the extension, and the panel AUM shows.
+@interface OpenRBViewController : AUViewControllerBase <AUAudioUnitFactory>
 @end
 
 enum { kOpenRBPullFrames = 4096 };
@@ -214,24 +215,9 @@ enum { kOpenRBPullFrames = 4096 };
     if (handler == nil) {
         return;
     }
-    OpenRBAudioUnit *unit = self;
-    dispatch_async(dispatch_get_main_queue(), ^{
-        OpenRBViewController *view = [[OpenRBViewController alloc] initWithUnit:unit];
-        handler(view);
-    });
-}
-
-@end
-
-@implementation OpenRBAudioUnitFactory
-
-- (void)beginRequestWithExtensionContext:(NSExtensionContext *)context {
-    (void)context;
-}
-
-- (AUAudioUnit *)createAudioUnitWithComponentDescription:(AudioComponentDescription)desc
-                                                   error:(NSError **)error {
-    return [[OpenRBAudioUnit alloc] initWithComponentDescription:desc options:0 error:error];
+    // Deliver it here. A host that is already on the main thread waits for this
+    // call; posting it back to the main queue never arrives, so the tap does nothing.
+    handler(self.panel);
 }
 
 @end
@@ -322,13 +308,38 @@ enum { kOpenRBPullFrames = 4096 };
 
 @implementation OpenRBViewController
 
-- (instancetype)initWithUnit:(OpenRBAudioUnit *)unit {
-    self = [super initWithNibName:nil bundle:nil];
+- (instancetype)initWithNibName:(NSString *)name bundle:(NSBundle *)bundle {
+    self = [super initWithNibName:name bundle:bundle];
     if (self == nil) {
         return nil;
     }
-    _unit = unit;
+    // A zero size is an empty window: the tap looks like it did nothing.
+    self.preferredContentSize = CGSizeMake(800, 640);
     return self;
+}
+
+- (void)beginRequestWithExtensionContext:(NSExtensionContext *)context {
+    (void)context;
+}
+
+- (AUAudioUnit *)createAudioUnitWithComponentDescription:(AudioComponentDescription)desc
+                                                   error:(NSError **)error {
+    OpenRBAudioUnit *unit = [[OpenRBAudioUnit alloc] initWithComponentDescription:desc
+                                                                          options:0
+                                                                            error:error];
+    if (unit == nil) {
+        return nil;
+    }
+    self.unit = unit;
+    unit.panel = self;
+    [self attachEngine];
+    return unit;
+}
+
+- (void)attachEngine {
+    if (self.metal != nil && self.unit != nil) {
+        self.metal.au = [self.unit engine];
+    }
 }
 
 - (void)viewDidLoad {
@@ -336,9 +347,9 @@ enum { kOpenRBPullFrames = 4096 };
     self.view.backgroundColor = [UIColor colorWithRed:0x1d / 255.0 green:0x21 / 255.0 blue:0x27 / 255.0 alpha:1];
     OpenRBMetalView *metal = [[OpenRBMetalView alloc] initWithFrame:self.view.bounds];
     metal.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-    metal.au = [self.unit engine];
     [self.view addSubview:metal];
     self.metal = metal;
+    [self attachEngine];
     self.link = [CADisplayLink displayLinkWithTarget:self selector:@selector(tick:)];
     [self.link addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
 }
