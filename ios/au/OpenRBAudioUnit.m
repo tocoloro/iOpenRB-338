@@ -21,10 +21,7 @@ extern void orb_au_ui_frame(OrbAu *au, void *layer, float width_pts, float heigh
 extern void orb_au_ui_touch(OrbAu *au, uint64_t touch_id, int phase, float x, float y);
 extern void orb_au_ui_detach(OrbAu *au);
 
-@class OpenRBViewController;
-
 @interface OpenRBAudioUnit : AUAudioUnit
-@property (nonatomic, weak) OpenRBViewController *panel;
 - (OrbAu *)engine;
 @end
 
@@ -33,10 +30,6 @@ extern void orb_au_ui_detach(OrbAu *au);
 @end
 
 enum { kOpenRBPullFrames = 4096 };
-
-// The extension keeps one panel, the principal view controller. A host that asks
-// the audio unit for it must get this object, never nil.
-static OpenRBViewController *gPanel;
 
 @implementation OpenRBAudioUnit {
     OrbAu *_au;
@@ -217,15 +210,9 @@ static OpenRBViewController *gPanel;
 }
 
 - (void)requestViewControllerWithCompletionHandler:(void (^)(AUViewControllerBase *__nullable))handler {
-    if (handler == nil) {
-        return;
-    }
-    // Later, on the main queue. Answering inside this call makes AUM report
-    // paramErr (-50). A nil controller is the same error.
-    dispatch_async(dispatch_get_main_queue(), ^{
-        OpenRBViewController *view = self.panel != nil ? self.panel : gPanel;
-        handler(view);
-    });
+    // The extension machinery packages the panel for AUM. Passing the object
+    // from here is what comes back as paramErr (-50).
+    [super requestViewControllerWithCompletionHandler:handler];
 }
 
 @end
@@ -323,7 +310,6 @@ static OpenRBViewController *gPanel;
     }
     // A zero size is an empty window: the tap looks like it did nothing.
     self.preferredContentSize = CGSizeMake(800, 640);
-    gPanel = self;
     return self;
 }
 
@@ -340,7 +326,6 @@ static OpenRBViewController *gPanel;
         return nil;
     }
     self.unit = unit;
-    unit.panel = self;
     [self attachEngine];
     return unit;
 }
