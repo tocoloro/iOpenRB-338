@@ -34,6 +34,10 @@ extern void orb_au_ui_detach(OrbAu *au);
 
 enum { kOpenRBPullFrames = 4096 };
 
+// The extension keeps one panel, the principal view controller. A host that asks
+// the audio unit for it must get this object, never nil.
+static OpenRBViewController *gPanel;
+
 @implementation OpenRBAudioUnit {
     OrbAu *_au;
     AUAudioUnitBusArray *_inputs;
@@ -216,14 +220,10 @@ enum { kOpenRBPullFrames = 4096 };
     if (handler == nil) {
         return;
     }
-    OpenRBViewController *view = self.panel;
-    // On the main thread, deliver now. A host that is already there waits for
-    // this call. From any other thread, the view has to be created on main.
-    if ([NSThread isMainThread]) {
-        handler(view);
-        return;
-    }
+    // Later, on the main queue. Answering inside this call makes AUM report
+    // paramErr (-50). A nil controller is the same error.
     dispatch_async(dispatch_get_main_queue(), ^{
+        OpenRBViewController *view = self.panel != nil ? self.panel : gPanel;
         handler(view);
     });
 }
@@ -323,6 +323,7 @@ enum { kOpenRBPullFrames = 4096 };
     }
     // A zero size is an empty window: the tap looks like it did nothing.
     self.preferredContentSize = CGSizeMake(800, 640);
+    gPanel = self;
     return self;
 }
 
