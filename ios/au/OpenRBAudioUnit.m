@@ -24,6 +24,10 @@ enum { kOpenRBPullFrames = 4096 };
     AUAudioUnitBusArray *_inputs;
     AUAudioUnitBusArray *_outputs;
     double _rate;
+    // AUM sets these just before allocateRenderResources and asks the plugin to
+    // keep the copies. The render callback uses these copies.
+    AUHostTransportStateBlock _transport;
+    AUHostMusicalContextBlock _musical;
     float *_pullLeft;
     float *_pullRight;
     float *_pullInterleaved;
@@ -73,8 +77,7 @@ enum { kOpenRBPullFrames = 4096 };
     return _outputs;
 }
 
-// The iPad's graph is 48 kHz. Refusing that leaves the unit unconnected, which
-// AUM shows as a red cross and then plays silence.
+// The iPad's graph is 48 kHz. Refusing that leaves the unit unconnected.
 - (BOOL)shouldChangeToFormat:(AVAudioFormat *)format forBus:(AUAudioUnitBus *)bus {
     (void)bus;
     if (format == nil || format.commonFormat != AVAudioPCMFormatFloat32) {
@@ -93,6 +96,8 @@ enum { kOpenRBPullFrames = 4096 };
     }
     double rate = self.outputBusses[0].format.sampleRate;
     _rate = rate >= 8000.0 ? rate : 44100.0;
+    _transport = self.transportStateBlock;
+    _musical = self.musicalContextBlock;
     return YES;
 }
 
@@ -114,22 +119,36 @@ enum { kOpenRBPullFrames = 4096 };
         double tempo = 0.0;
         // Not a number: the host gave no beat, so the engine keeps its own clock.
         double beat = NAN;
-        int playing = 1;
-        AUHostTransportStateBlock transport = self_.transportStateBlock;
-        AUHostMusicalContextBlock musical = self_.musicalContextBlock;
+        double sample_pos = 0.0;
+        AUHostTransportStateBlock transport = self_->_transport;
+        AUHostMusicalContextBlock musical = self_->_musical;
+        // No transport block: a host that never publishes one still makes sound.
+        // A host that does publish one stays silent until it reports moving.
+        int playing = transport == nil ? 1 : 0;
         if (transport != nil) {
             AUHostTransportStateFlags flags = 0;
-            if (transport(&flags, NULL, NULL, NULL)) {
+            double cycle_start = 0.0;
+            double cycle_end = 0.0;
+            if (transport(&flags, &sample_pos, &cycle_start, &cycle_end)) {
                 playing = (flags & AUHostTransportStateMoving) != 0;
             }
         }
         if (musical != nil) {
             double reported_tempo = 0.0;
+            double numerator = 4.0;
+            NSInteger denominator = 4;
             double reported_beat = 0.0;
-            if (musical(&reported_tempo, NULL, NULL, &reported_beat, NULL, NULL)) {
+            NSInteger next_beat = 0;
+            double downbeat = 0.0;
+            if (musical(&reported_tempo, &numerator, &denominator, &reported_beat, &next_beat,
+                        &downbeat)) {
                 tempo = reported_tempo;
                 beat = reported_beat;
             }
+        }
+        if (playing && !isfinite(beat) && isfinite(sample_pos) && isfinite(tempo) && tempo > 0.0 &&
+            self_->_rate > 0.0) {
+            beat = sample_pos * tempo / 60.0 / self_->_rate;
         }
         double rate = self_->_rate;
         uint32_t frames = (uint32_t)frameCount;

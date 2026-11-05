@@ -78,9 +78,10 @@ impl Host {
 
     /// A finite `beat` locks the clock to the host. A host that is playing but has no beat
     /// (not a number) leaves the engine's own clock running, so the pattern is not pulled
-    /// back to zero on every buffer. A stopped host halts.
+    /// back to zero on every buffer. A stopped host halts. A negative beat is the host's
+    /// count-in: stay quiet until beat 0.
     fn sync_clock(&mut self, tempo_bpm: f64, beat: f64, playing: bool) {
-        if !playing {
+        if !playing || (beat.is_finite() && beat < 0.0) {
             self.engine.follow_host(tempo_bpm, 0.0, false);
             return;
         }
@@ -263,6 +264,31 @@ mod tests {
         assert!(host.engine.playing());
         assert!(left.iter().any(|s| s.abs() > 1.0e-4));
         assert!(host.engine.fault().is_none());
+    }
+
+    #[test]
+    fn a_negative_beat_stays_quiet_until_the_downbeat() {
+        let mut host = Host::new();
+        let mut left = vec![0.0; 256];
+        let mut right = vec![0.0; 256];
+        host.render(&mut left, &mut right, 44_100.0, 120.0, -0.5, true);
+        assert!(!host.engine.playing());
+        assert!(left.iter().all(|s| *s == 0.0));
+        host.render(&mut left, &mut right, 44_100.0, 120.0, 0.0, true);
+        assert!(host.engine.playing());
+        assert!(left.iter().any(|s| s.abs() > 1.0e-4));
+    }
+
+    #[test]
+    fn stopping_the_host_silences_the_pattern() {
+        let mut host = Host::new();
+        let mut left = vec![0.0; 256];
+        let mut right = vec![0.0; 256];
+        host.render(&mut left, &mut right, 44_100.0, 100.0, 0.0, true);
+        assert!(left.iter().any(|s| s.abs() > 1.0e-4));
+        host.render(&mut left, &mut right, 44_100.0, 100.0, 1.0, false);
+        assert!(!host.engine.playing());
+        assert!(left.iter().all(|s| *s == 0.0));
     }
 
     #[test]
