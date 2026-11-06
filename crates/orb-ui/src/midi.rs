@@ -181,6 +181,15 @@ mod clock {
         }
     }
 
+    /// The packet after `pkt` on ARM. `MIDIPacketNext` is a macro in the
+    /// header, and the symbol is not exported, so the iPad callback cannot
+    /// call it. The next packet begins at `data[length]`, rounded up to 4 bytes.
+    pub(super) fn next_arm_packet(pkt: *const u8, length: u16) -> *const u8 {
+        let end = pkt.wrapping_byte_add(10 + usize::from(length));
+        let aligned = (end as usize).wrapping_add(3) & !3;
+        aligned as *const u8
+    }
+
     #[cfg(test)]
     mod tests {
         use super::*;
@@ -248,6 +257,19 @@ mod clock {
                 parser.feed(&[0xF8], i * step, &sync);
             }
             assert_eq!(sync.tempo(), 120_000);
+        }
+
+        #[test]
+        fn the_next_arm_packet_is_four_byte_aligned() {
+            // A 4-byte-aligned packet. The header is 10 bytes, then the data.
+            let pkt = 0x1000 as *const u8;
+            let delta = |n: u16| super::next_arm_packet(pkt, n) as usize - 0x1000;
+            assert_eq!(delta(0), 12);
+            assert_eq!(delta(1), 12);
+            assert_eq!(delta(2), 12);
+            assert_eq!(delta(3), 16);
+            assert_eq!(delta(4), 16);
+            assert_eq!(super::next_arm_packet(pkt, 1) as usize % 4, 0);
         }
     }
 }

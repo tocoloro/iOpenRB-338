@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use orb_player::midi::{MidiSync, PORT_SOURCE, PORT_VIRTUAL};
 
 use super::MidiChoice;
-use super::clock::Parser;
+use super::clock::{Parser, next_arm_packet};
 
 const UTF8: u32 = 0x0800_0100;
 /// The virtual port's name, and the name AUM shows.
@@ -254,7 +254,7 @@ fn timebase() -> (u32, u32) {
 /// SAFETY: CoreMIDI calls this with a live packet list and the `ref_con` passed
 /// to `MIDIDestinationCreate` / `MIDIInputPortCreate`, which is the `Bridge`
 /// kept alive by [`MidiIn`]. The client is disposed before that `Arc` drops.
-unsafe extern "C" fn read_proc(list: *const PacketList, ref_con: *mut c_void, src: *mut c_void) {
+unsafe extern "C" fn read_proc(list: *const c_void, ref_con: *mut c_void, src: *mut c_void) {
     if list.is_null() || ref_con.is_null() {
         return;
     }
@@ -268,20 +268,18 @@ unsafe extern "C" fn read_proc(list: *const PacketList, ref_con: *mut c_void, sr
         return;
     }
     let mut parser = bridge.parser.lock().unwrap_or_else(|e| e.into_inner());
-    let n = unsafe { (*list).num_packets }.min(1024);
-    let mut pkt = unsafe { std::ptr::addr_of!((*list).packet[0]) };
+    // The list is a u32 count, then packets packed to 4 bytes. The first
+    // packet therefore starts at offset 4, so its time stamp is not 8-aligned.
+    let list = list.cast::<u8>();
+    let n = unsafe { std::ptr::read_unaligned(list.cast::<u32>()) }.min(1024);
+    let mut pkt = unsafe { list.byte_add(4) };
     for _ in 0..n {
-        if pkt.is_null() {
-            break;
-        }
-        // A packet is only `length` data bytes, shorter than the 256-byte tail
-        // of the C struct, so the fields are read by offset and not as a reference.
-        let time_stamp = unsafe { std::ptr::read(pkt.cast::<u64>()) };
-        let length = unsafe { std::ptr::read(pkt.byte_add(8).cast::<u16>()) };
+        let time_stamp = unsafe { std::ptr::read_unaligned(pkt.cast::<u64>()) };
+        let length = unsafe { std::ptr::read_unaligned(pkt.byte_add(8).cast::<u16>()) };
         let len = usize::from(length).min(4096);
-        let bytes = unsafe { std::slice::from_raw_parts(pkt.byte_add(10).cast::<u8>(), len) };
+        let bytes = unsafe { std::slice::from_raw_parts(pkt.byte_add(10), len) };
         parser.feed(bytes, host_ns(time_stamp), &bridge.sync);
-        pkt = unsafe { midi_packet_next(pkt) };
+        pkt = next_arm_packet(pkt, length);
     }
 }
 
@@ -289,19 +287,6 @@ unsafe extern "C" fn read_proc(list: *const PacketList, ref_con: *mut c_void, sr
 struct Timebase {
     numer: u32,
     denom: u32,
-}
-
-#[repr(C)]
-struct Packet {
-    time_stamp: u64,
-    length: u16,
-    data: [u8; 256],
-}
-
-#[repr(C)]
-struct PacketList {
-    num_packets: u32,
-    packet: [Packet; 1],
 }
 
 unsafe extern "C" {
@@ -354,7 +339,7 @@ unsafe extern "C" {
     fn midi_destination_create(
         client: u32,
         name: *const c_void,
-        read: unsafe extern "C" fn(*const PacketList, *mut c_void, *mut c_void),
+        read: unsafe extern "C" fn(*const c_void, *mut c_void, *mut c_void),
         ref_con: *mut c_void,
         out_dest: *mut u32,
     ) -> i32;
@@ -363,7 +348,7 @@ unsafe extern "C" {
     fn midi_input_port_create(
         client: u32,
         name: *const c_void,
-        read: unsafe extern "C" fn(*const PacketList, *mut c_void, *mut c_void),
+        read: unsafe extern "C" fn(*const c_void, *mut c_void, *mut c_void),
         ref_con: *mut c_void,
         out_port: *mut u32,
     ) -> i32;
@@ -389,7 +374,4 @@ unsafe extern "C" {
         key: *const c_void,
         string: *mut *const c_void,
     ) -> i32;
-
-    #[link_name = "MIDIPacketNext"]
-    fn midi_packet_next(packet: *const Packet) -> *const Packet;
 }
