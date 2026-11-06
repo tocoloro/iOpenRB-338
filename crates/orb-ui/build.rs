@@ -157,6 +157,12 @@ fn embed_windows_resources(manifest: &Path, version: &str) {
 }
 
 fn main() {
+    // The iPad MIDI client calls CoreMIDI and CoreFoundation directly. The
+    // extern block names the frameworks; this line is what the iOS linker uses.
+    if std::env::var("CARGO_CFG_TARGET_OS").ok().as_deref() == Some("ios") {
+        println!("cargo:rustc-link-lib=framework=CoreFoundation");
+        println!("cargo:rustc-link-lib=framework=CoreMIDI");
+    }
     let manifest = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
     let version = set_version(&manifest);
     embed_windows_resources(&manifest, &version);
