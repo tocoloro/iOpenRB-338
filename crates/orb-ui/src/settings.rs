@@ -4,8 +4,9 @@
 //! It is a TOML file (task-107) with the keys `songs_dir` and `mods_dir` (paths, absent when
 //! unset), `recent` (an array of paths, newest first), `last_song_dir` and `last_mod_dir`
 //! (paths, absent until a file is chosen: the folder of the last song chosen in Open, Save As
-//! or Export, and of the last mod; task-144), `startup_sound` and `large_panel` (bools) and
-//! the table
+//! or Export, and of the last mod; task-144), `startup_sound` and `large_panel` (bools),
+//! `midi_sync` and `midi_sync_name` (the iPad clock port: empty is off, `virtual` is this
+//! app's port, anything else is a CoreMIDI unique id) and the table
 //! `preferred_mods` (an INFO name to the file name preferred among mods that share it,
 //! task-151), so it can be edited by hand. Where it lives: `$ORB_UI_CONFIG` if set; else
 //! `OpenRB-338/ui.toml` in the platform's configuration folder (`$XDG_CONFIG_HOME`, or
@@ -56,6 +57,11 @@ pub struct Settings {
     /// to file name. Stored as the table `preferred_mods`. Names are compared ignoring ASCII
     /// case ([`Settings::preferred_mod`]).
     pub preferred_mods: BTreeMap<String, String>,
+    /// The iPad MIDI clock port (`midi_sync`). Empty is off. `virtual` is this app's port.
+    /// Any other value is a CoreMIDI unique id in decimal.
+    pub midi_sync: String,
+    /// The display name stored with [`Settings::midi_sync`], used when that id is gone.
+    pub midi_sync_name: String,
     /// Where this was read from and is written to (`None`: never persisted, as in tests).
     pub file: Option<PathBuf>,
 }
@@ -71,6 +77,8 @@ impl Default for Settings {
             last_song_dir: None,
             last_mod_dir: None,
             preferred_mods: BTreeMap::new(),
+            midi_sync: String::new(),
+            midi_sync_name: String::new(),
             file: None,
         }
     }
@@ -131,6 +139,10 @@ struct Stored<'a> {
     last_song_dir: Option<&'a Path>,
     #[serde(skip_serializing_if = "Option::is_none")]
     last_mod_dir: Option<&'a Path>,
+    #[serde(skip_serializing_if = "empty_str")]
+    midi_sync: &'a str,
+    #[serde(skip_serializing_if = "empty_str")]
+    midi_sync_name: &'a str,
     // a table, so last
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     preferred_mods: BTreeMap<&'a str, &'a str>,
@@ -140,6 +152,10 @@ struct Stored<'a> {
 /// any other path is left out of the file.
 fn is_false(v: &bool) -> bool {
     !*v
+}
+
+fn empty_str(s: &&str) -> bool {
+    s.is_empty()
 }
 
 fn storable(p: &Path) -> Option<&Path> {
@@ -199,6 +215,14 @@ impl Settings {
                 }
             }
         }
+        if let Some(v) = table.get("midi_sync").and_then(|v| v.as_str())
+            && v != "off"
+        {
+            s.midi_sync = v.to_string();
+        }
+        if let Some(v) = table.get("midi_sync_name").and_then(|v| v.as_str()) {
+            s.midi_sync_name = v.to_string();
+        }
         s
     }
 
@@ -233,6 +257,8 @@ impl Settings {
             recent: self.recent.iter().filter_map(|p| storable(p)).collect(),
             last_song_dir: self.last_song_dir.as_deref().and_then(storable),
             last_mod_dir: self.last_mod_dir.as_deref().and_then(storable),
+            midi_sync: &self.midi_sync,
+            midi_sync_name: &self.midi_sync_name,
             preferred_mods: self
                 .preferred_mods
                 .iter()

@@ -42,12 +42,27 @@ still play them. That option is off unless you turn it on. Export on the iPad wr
 folder, through the Files app, are what File, Open can load.
 
 The iPad package is the application. It does not include an Audio Unit, so a host
-such as AUM cannot load it or take its sound. The song's clock is its own, and
-playback continues when you leave the app.
+such as AUM cannot load it or take its sound. Playback continues when you leave
+the app.
 
 There is no App Store listing and no install package in Releases. The `.ipa` is the
 artifact `OpenRB-338-ipad` of the
 [ios workflow](https://github.com/tocoloro/iOpenRB-338/actions/workflows/ios.yml).
+
+## MIDI sync
+
+Options, MIDI Sync follows a MIDI clock. The choice is a port. Clock, Start and
+Stop are system messages, so there is no channel to pick.
+
+- **Off** leaves the song on its own clock.
+- **iOpenRB-338** is a port this app publishes. In AUM, send MIDI Clock to that
+  port, then choose the same line here.
+- The other lines are USB and Bluetooth ports the iPad already has connected.
+
+Start puts the song at the beginning and plays. Stop halts it where it is.
+Continue plays on from there. The tempo comes from the clock, 24 pulses per
+quarter note. The sound stays on the iPad. A host can mark the time, and it
+does not process the audio.
 
 ## Install it on an iPad
 

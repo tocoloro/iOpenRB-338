@@ -80,6 +80,7 @@
 //! into a second triple buffer whenever they change), which is what a save of a recorded song
 //! writes.
 
+pub mod midi;
 pub mod output;
 
 use std::sync::Arc;
@@ -426,6 +427,8 @@ pub struct Audio {
     /// The host transport for the next engine call, if a host set one
     /// ([`Audio::follow_host`]). The desktop stream leaves this empty.
     host: Option<(f64, f64, bool)>,
+    /// MIDI clock posts ([`Audio::set_midi_sync`]). Empty unless a port is armed.
+    midi: Option<midi::Driver>,
 }
 
 impl Player {
@@ -459,6 +462,7 @@ impl Player {
             preview_pos: 0,
             preview_on: false,
             host: None,
+            midi: None,
         };
         audio.publish();
         let player = Player {
@@ -588,6 +592,12 @@ impl Audio {
         self.host = Some((tempo_bpm, beat, playing));
     }
 
+    /// Follow `sync` from the audio callback. The iPad app sets this before the stream starts.
+    /// The desktop stream does not.
+    pub fn set_midi_sync(&mut self, sync: Arc<midi::MidiSync>) {
+        self.midi = Some(midi::Driver::new(sync));
+    }
+
     /// [`Audio::render_i16`] as f32 (`x / 32768`, exact).
     pub fn render_f32(&mut self, out: &mut [f32]) {
         self.pull(out.len() / 2, |i, l, r| {
@@ -623,6 +633,10 @@ impl Audio {
         // so a repeated lock does not pull the song back to the same beat.
         if let Some((tempo, beat, playing)) = self.host.take() {
             self.current.lock_to_host(tempo, beat, playing);
+        }
+        // MIDI clock wins over a play or a tempo queued in this same call.
+        if let Some(midi) = &mut self.midi {
+            midi.apply(&mut self.current);
         }
         // a faulting call writes nothing (`Engine::fault`): silence rather than the last call
         self.buf.fill(0);

@@ -324,6 +324,9 @@ pub struct App {
     pub(crate) allow_close: bool,
     /// The window title last sent (`App::update_title`).
     pub title: String,
+    /// The iPad's CoreMIDI client. Empty on a machine where it failed to open.
+    #[cfg(target_os = "ios")]
+    pub midi: Option<crate::midi::MidiIn>,
     holds: Vec<Hold>,
     /// Fingers beyond the one egui's pointer already owns. The key is stable from touch down to
     /// lift.
@@ -385,6 +388,8 @@ impl App {
             events_seen: 0,
             allow_close: false,
             title: String::new(),
+            #[cfg(target_os = "ios")]
+            midi: None,
             holds: Vec::new(),
             fingers: BTreeMap::new(),
             pan: Vec2::ZERO,

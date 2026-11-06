@@ -213,3 +213,23 @@ fn orb_ui_config_names_the_settings_file() {
         assert_eq!(default.parent().unwrap().file_name().unwrap(), "OpenRB-338");
     }
 }
+
+#[test]
+fn the_midi_port_is_saved_and_an_empty_one_is_left_out() {
+    let d = tempfile::tempdir().unwrap();
+    let file = d.path().join("ui.toml");
+    let mut s = Settings::load_from(&file);
+    s.save().unwrap();
+    let text = fs::read_to_string(&file).unwrap();
+    assert!(!text.contains("midi_sync"), "{text}");
+    s.midi_sync = "virtual".to_string();
+    s.midi_sync_name = "iOpenRB-338".to_string();
+    s.save().unwrap();
+    let r = Settings::load_from(&file);
+    assert_eq!(r.midi_sync, "virtual");
+    assert_eq!(r.midi_sync_name, "iOpenRB-338");
+    fs::write(&file, "midi_sync = \"off\"\nmidi_sync_name = 3\n").unwrap();
+    let r = Settings::load_from(&file);
+    assert!(r.midi_sync.is_empty());
+    assert!(r.midi_sync_name.is_empty());
+}

@@ -323,6 +323,8 @@ fn main() -> eframe::Result {
     // keeps the audio stream alive for the whole run
     let mut _stream = None;
     let mut audio_health = None;
+    #[cfg(target_os = "ios")]
+    let mut midi_in = None;
     if !demo {
         let samples = Some(rbm::standard::builtin_samples());
         app_samples = samples.clone();
@@ -339,7 +341,22 @@ fn main() -> eframe::Result {
             }
         }
         #[cfg(target_os = "ios")]
+        let mut audio = audio;
+        #[cfg(target_os = "ios")]
         play_in_background();
+        #[cfg(target_os = "ios")]
+        {
+            let sync = std::sync::Arc::new(orb_player::midi::MidiSync::new());
+            midi_in = Some(
+                match orb_ui::midi::MidiIn::open(std::sync::Arc::clone(&sync)) {
+                    Ok(midi) => {
+                        audio.set_midi_sync(sync);
+                        Ok(midi)
+                    }
+                    Err(e) => Err(e),
+                },
+            );
+        }
         match orb_player::output::start(audio) {
             Ok(s) => {
                 audio_health = Some(s.health());
@@ -417,6 +434,19 @@ fn main() -> eframe::Result {
             app.menu = true;
             app.enable_logo_anim();
             app.settings = Settings::load();
+            #[cfg(target_os = "ios")]
+            if let Some(opened) = midi_in {
+                match opened {
+                    Ok(midi) => {
+                        midi.restore(&app.settings.midi_sync, &app.settings.midi_sync_name);
+                        app.midi = Some(midi);
+                    }
+                    Err(e) => {
+                        log::info!("MIDI: {e}");
+                        start_errors.push(format!("MIDI: {e}"));
+                    }
+                }
+            }
             // the song (or the new empty song) and its mod's startup sound; nothing in the demo,
             // which has no player
             // (the errors of the start are one box)

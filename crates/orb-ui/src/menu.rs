@@ -17,7 +17,8 @@
 //!   (task-099). "Demo Song" opens the `Demo.rbs` of the current mod as an unsaved song (task-094).
 //! - **Options**: the Vintage ReBirth Synth Sound flag (GLOB byte 482; Edit menu item 323 of the
 //!   original), Large panel (twice the size; two fingers on empty space pan it) and the keyboard
-//!   mode (Ctrl/Cmd+F, Ctrl/Cmd+G; docs/ui_spec.md section 10). The iPad has no keyboard mode.
+//!   mode (Ctrl/Cmd+F, Ctrl/Cmd+G; docs/ui_spec.md section 10). The iPad has no keyboard mode. On
+//!   the iPad, MIDI Sync follows a port's tempo and start/stop.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -101,6 +102,9 @@ pub enum Cmd {
     /// "Large panel" of the Options menu: twice the size. Empty space moves it; controls stay.
     ToggleLargePanel,
     SetKeyMode(KeyMode),
+    /// Options > MIDI Sync, iPad only: which port's clock to follow.
+    #[cfg(target_os = "ios")]
+    SetMidiSync(crate::midi::MidiChoice),
 }
 
 /// One entry of the Mods menu: a mod of the Mods folder, or the several mods that share an
@@ -932,6 +936,25 @@ impl App {
                 }
             }
             Cmd::SetKeyMode(m) => self.key_mode = m,
+            #[cfg(target_os = "ios")]
+            Cmd::SetMidiSync(choice) => {
+                let name = {
+                    let Some(midi) = &self.midi else {
+                        return;
+                    };
+                    midi.select(choice);
+                    match choice {
+                        crate::midi::MidiChoice::Source(id) => midi.name_of(id).unwrap_or_default(),
+                        crate::midi::MidiChoice::Virtual => crate::midi::VIRTUAL_NAME.to_string(),
+                        crate::midi::MidiChoice::Off => String::new(),
+                    }
+                };
+                self.settings.midi_sync = choice.stored_id();
+                self.settings.midi_sync_name = name;
+                if let Err(e) = self.settings.save() {
+                    self.fail(e);
+                }
+            }
         }
     }
 
@@ -1269,6 +1292,16 @@ impl App {
                                     ui.close();
                                 }
                             }
+                            #[cfg(target_os = "ios")]
+                            {
+                                ui.separator();
+                                ui.menu_button("MIDI Sync", |ui| self.midi_sync_menu(ui, &mut cmd))
+                                    .response
+                                    .on_hover_text(
+                                        "Follow a MIDI clock's tempo and start/stop. \
+                                         The sound stays on this iPad.",
+                                    );
+                            }
                         });
                         // Last in the bar. An item is one line of `HELP_ITEMS`.
                         ui.menu_button("Help", |ui| {
@@ -1308,6 +1341,49 @@ fn item(ui: &mut Ui, text: &str, shortcut: Option<&egui::KeyboardShortcut>) -> b
         ui.close();
     }
     clicked
+}
+
+/// The iPad's Options > MIDI Sync submenu.
+#[cfg(target_os = "ios")]
+fn midi_port_item(ui: &mut Ui, on: bool, label: &str) -> bool {
+    let clicked = ui.radio(on, label).clicked();
+    if clicked {
+        ui.close();
+    }
+    clicked
+}
+
+#[cfg(target_os = "ios")]
+impl App {
+    fn midi_sync_menu(&mut self, ui: &mut Ui, cmd: &mut Option<Cmd>) {
+        let Some(midi) = &self.midi else {
+            ui.label(RichText::new("MIDI is unavailable").color(INK_DIM));
+            return;
+        };
+        let choice = midi.choice();
+        if midi_port_item(ui, choice == crate::midi::MidiChoice::Off, "Off") {
+            *cmd = Some(Cmd::SetMidiSync(crate::midi::MidiChoice::Off));
+        }
+        if midi_port_item(
+            ui,
+            choice == crate::midi::MidiChoice::Virtual,
+            crate::midi::VIRTUAL_NAME,
+        ) {
+            *cmd = Some(Cmd::SetMidiSync(crate::midi::MidiChoice::Virtual));
+        }
+        ui.separator();
+        let sources = midi.sources();
+        if sources.is_empty() {
+            ui.label(RichText::new("No other ports").color(INK_DIM));
+            return;
+        }
+        for source in sources {
+            let choice = crate::midi::MidiChoice::Source(source.id);
+            if midi_port_item(ui, midi.choice() == choice, &source.name) {
+                *cmd = Some(Cmd::SetMidiSync(choice));
+            }
+        }
+    }
 }
 
 /// The order of the Mods menu's top-level entries (task-167): the names with ASCII letters
