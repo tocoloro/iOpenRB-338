@@ -57,9 +57,13 @@ Stop are system messages, so there is no channel to pick.
 - **Off** leaves the song on its own clock.
 - **iOpenRB-338** is a port this app publishes. In AUM, send MIDI Clock to that
   port, then choose the same line here.
-- The other lines are USB, Bluetooth and network ports. The app joins the
-  network session, so a computer on the same Wi-Fi can show up. AUM's own
-  network session stays inside AUM: send MIDI Clock to iOpenRB-338.
+- **A physical port** is a USB or Bluetooth MIDI interface the iPad already
+  has connected, including the MIDI sockets of an audio interface. Choose
+  that line, not iOpenRB-338. The other computer sends MIDI clock out of
+  that interface.
+- **A network port** shows up because the app joins the network session, so
+  a computer on the same Wi-Fi can appear. AUM's own network session stays
+  inside AUM: send MIDI Clock to iOpenRB-338.
 
 Start puts the song at the beginning and plays. Stop halts it where it is.
 Continue plays on from there. The tempo comes from the clock, 24 pulses per
