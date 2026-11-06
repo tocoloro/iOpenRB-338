@@ -841,6 +841,10 @@ impl App {
             let sound = self.audio_health.is_some() && !self.audio_reported;
             if sound && link.moving(&self.panel) {
                 ui.ctx().request_repaint_after(METER_FRAME);
+            } else if sound && cfg!(target_os = "ios") {
+                // A MIDI start happens with no touch, so nothing else asks for a
+                // frame. Without one the tempo and the running lights stay put.
+                ui.ctx().request_repaint_after(Duration::from_millis(50));
             }
         }
         // the 303's lit note in pitch mode goes out by itself
